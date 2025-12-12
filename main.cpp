@@ -1,0 +1,381 @@
+#include <iostream>
+#include <glad/glad.h>
+#include <GLFW/glfw3.h> // yea i know there is a .dll file, but for now i will include it like that, bruh
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <vector>
+#include <random>
+//          files
+
+#include "Classes/object.h"
+#include "Classes/camera.h"
+#include "Classes/grid2D.h"
+
+std::default_random_engine generator;
+std::uniform_real_distribution<double> distribution(-20,20);
+
+//
+// SHADERS
+//
+const char *vertexShaderSource = R"glsl(
+#version 330 core
+layout (location = 0) in vec3 aPos;
+uniform mat4 projection;
+uniform mat4 model;
+uniform mat4 view;
+void main()
+{
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
+})glsl";
+
+const char* fragmentShaderSource = R"glsl(
+#version 330 core
+out vec4 FragColor;
+uniform vec3 objectColor;
+void main() {
+    FragColor = vec4(objectColor, 1.0f);
+})glsl";
+
+const char* fragmentLightShaderSource = R"glsl(
+)glsl";
+//
+// CAMERA
+//
+Camera camera = Camera(); //        watch camera.h and camera.cpp
+
+//
+// MAIN FUNCTIONS (DECLARATION)
+//
+void processInput(GLFWwindow *window);
+void updateState();
+void updateCamera();
+void addObject();
+void inactivateObject(Object object);
+void deleteObject();
+void initializeObjects();
+GLuint createShaders();
+
+void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+void scroll_callback(GLFWwindow* window, double xOffset, double yOffset);
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods);
+void cursor_position_callback(GLFWwindow* window, double xPos, double yPos);
+
+//
+// GLOBAL VARIABLES
+//
+bool pause = false, mousePressed = false;
+
+//          constant variables
+constexpr double G = 6.6743e-11;
+constexpr double c = 299792458.0;
+
+float windowWidth, windowHeight;
+
+
+//          vectors of active Objects (star, planets, black holes, etc.), which must be on screen
+std::vector<Object> activeObjects = {
+    Object(2000, 20,glm::vec3 {0.0f, 0.0f, 0.0f}),
+    Object(20, 2,glm::vec3 {5.0f, 0.0f, 0.0f})
+};
+//          vectors of inactive objects, in future they're going to deleting
+std::vector<Object> inactiveObjects = {};
+
+//          matrices for vertex shader
+glm::mat4 view, projection;
+
+//
+// MAIN
+//
+int main() {
+    //              GLFW initialization
+    if (!glfwInit()) {
+        std::cout << "Failed to initialize GLFW" << std::endl;
+        return -1;
+    }
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_ANY_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    GLFWmonitor *monitor = glfwGetPrimaryMonitor();
+    const float screenWidth = (glfwGetVideoMode(monitor)->width - 400.0f);
+    const float screenHeight = (glfwGetVideoMode(monitor)->height - 200.0f);
+    windowWidth = screenWidth;
+    windowHeight = screenHeight;
+
+    //              Creating window
+    GLFWwindow* window = glfwCreateWindow(screenWidth, screenHeight, "Simulation", nullptr, nullptr);
+    if (!window) {
+        std::cerr << "Failed to create window!" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
+
+    //              set callbacks
+    glfwMakeContextCurrent(window);
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+    glfwSetCursorPosCallback(window, cursor_position_callback);
+    glfwSetMouseButtonCallback(window, mouse_button_callback);
+    glfwSetScrollCallback(window, scroll_callback);
+
+
+    if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)))
+    {
+        std::cout << "Failed to initialize GLAD" << std::endl;
+        return -1;
+    }
+    glViewport(0, 0, screenWidth, screenHeight);
+
+    //shader program
+    GLuint shaderProgram = createShaders();
+
+    std::cout << glGetString(GL_VERSION);
+    std::cout << std::endl << GLVersion.major << GLVersion.minor <<std::endl;
+
+    // locations of uniform variables
+    GLint modelLoc = glGetUniformLocation(shaderProgram, "model");
+    GLint projectionLoc = glGetUniformLocation(shaderProgram, "projection");
+    GLint viewLoc = glGetUniformLocation(shaderProgram, "view");
+
+    GLint colorLoc = glGetUniformLocation(shaderProgram, "objectColor");
+
+    initializeObjects();
+    // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glEnable(GL_DEPTH_TEST);
+
+
+    // Main loop
+    while (!glfwWindowShouldClose(window)) {
+        // input processing
+        processInput(window);
+
+        // starting render
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        // glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        updateCamera();
+        //          GRID RENDER
+        Grid2D grid = Grid2D(40, 150);
+        grid.vertices = grid.getVertices(activeObjects);
+        grid.vertexCount = grid.vertices.size();
+        grid.createVBOVAO(grid.VAO, grid.VBO, grid.vertices.data(), grid.vertices.size());
+        auto model = glm::mat4(1.0f);
+        model = glm::translate(model, {0.0f, 0.0f, 0.0f});
+        glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f);
+        glUseProgram(shaderProgram);
+
+        glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+        glUniform3fv(colorLoc, 1, glm::value_ptr(color));
+
+        glBindVertexArray(grid.VAO);
+        glDrawArrays(GL_LINES, 0, grid.vertexCount / 3);
+        glBindVertexArray(0);
+
+
+        //          OBJECTS RENDER
+        for (auto& object : activeObjects) {
+            if (object.Initilized && object.Active) {
+                object.updateVertices();
+            }
+            if (activeObjects.size() > 1) {
+                for (auto& object2 : activeObjects) {
+                    if (object.VAO !=  object2.VAO && object.Active && object2.Active) {
+                        float dx = object2.position.x - object.position.x;
+                        float dy = object2.position.y - object.position.y;
+                        float dz = object2.position.z - object.position.z;
+                        float distance = sqrt(dx * dx + dy * dy + dz * dz); //r
+
+                        if (distance > 0) { //preventing undefined behaviour
+                            float gravityForce = G * ((object.mass*object2.mass)/(distance * distance)); // F=G(m_1*m_2/r^2)
+
+                            if (!pause) {
+                                float acceleration = gravityForce * object2.mass; //    F/m
+                                float x = -dx/distance;
+                                float y = -dy/distance;
+                                float z = -dz/distance;
+                                glm::vec3 accelerationVector = {x*acceleration, y*acceleration, z*acceleration};
+                                object2.accelerateObject(accelerationVector);
+                            }
+                        }
+                        if (object.checkCollision(&object2)) {
+                            inactivateObject(object);
+                            inactivateObject(object2);
+                        }
+                    }
+                }
+            }
+
+            if (!pause) {
+                updateState();
+            }
+            auto model = glm::mat4(1.0f);
+            model = glm::translate(model, object.position);
+            glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f);
+            glUseProgram(shaderProgram);
+
+            glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+            glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+            glUniform3fv(colorLoc, 1, glm::value_ptr(color));
+
+            glBindVertexArray(object.VAO);
+            glDrawArrays(GL_TRIANGLES, 0, object.vertexCount / 3);
+            glBindVertexArray(0);
+        }
+        // for (Object& toDelete : inactiveObjects) {
+        //     std::erase(inactiveObjects, toDelete);
+        //     auto ptr = std::make_unique<Object>(toDelete);
+        //     glBindVertexArray(0);
+        //     glDeleteVertexArrays(1, &toDelete.VAO);
+        //     toDelete.VAO = 0;
+        //     glDeleteBuffers(1, &toDelete.VBO);
+        //     toDelete.VBO = 0;
+        //
+        //     delete &ptr;
+        // }
+
+        //events and buffer change
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+    }
+
+    for (auto& obj : activeObjects) {
+        glDeleteVertexArrays(1, &obj.VAO);
+        glDeleteBuffers(1, &obj.VBO);
+    }
+    glDeleteProgram(shaderProgram);
+
+    glfwTerminate(); // this world is cruel and everything is going to end, just like this program
+    return 0;
+}
+
+//
+// main functions (definitions)
+//
+void addObject() {
+    activeObjects.emplace_back(rand() % 10000, rand() % 10+1 , glm::vec3 {distribution(generator), distribution(generator), distribution(generator)});
+    initializeObjects();
+}
+
+void inactivateObject(Object object) {
+    object.Active = false;
+
+    std::erase(activeObjects, object);
+    inactiveObjects.emplace_back(object);
+}
+
+void initializeObjects() {
+    for (auto& obj : activeObjects) {
+        if (!obj.Initilized) {
+            obj.init();
+        }
+    }
+}
+
+void updateState() {
+    for (auto& obj : activeObjects) {
+        obj.updatePosition();
+    }
+}
+
+void processInput(GLFWwindow *window) {
+    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+        glfwSetWindowShouldClose(window, true);
+    }
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+        if (pause == true) {
+            pause = false;
+        } else {
+            pause = true;
+        }
+    }
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+        addObject();
+    }
+}
+
+GLuint createShaders() {
+    // vertex shader
+    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
+    glCompileShader(vertexShader);
+
+    GLint success;
+    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        char infoLog[512];
+        glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
+        std::cerr << "Vertex shader compilation failed:\n" << infoLog << std::endl;
+    }
+
+    // fragment shader
+    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
+    glCompileShader(fragmentShader);
+
+    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        char infoLog[512];
+        glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
+        std::cerr << "Fragment shader compilation failed:\n" << infoLog << std::endl;
+    }
+
+    // shader program
+    GLuint shaderProgram = glCreateProgram();
+    glAttachShader(shaderProgram, vertexShader);
+    glAttachShader(shaderProgram, fragmentShader);
+    glLinkProgram(shaderProgram);
+
+    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+    if (!success) {
+        char infoLog[512];
+        glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
+        std::cerr << "Shader program linking failed:\n" << infoLog << std::endl;
+    }
+
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+
+    return shaderProgram;
+}
+
+void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
+    if (glfwGetCurrentContext() != NULL) {
+        glViewport(0, 0, width, height);
+        projection = glm::perspective(glm::radians(45.0f), windowWidth / windowHeight, 0.01f, 100000.0f);
+    }
+}
+
+void scroll_callback(GLFWwindow* window, double xOffset, double yOffset) {
+    camera.scaling(yOffset);
+}
+
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        if (action == GLFW_PRESS) {
+            mousePressed = true;
+            camera.SetFirstMouse(true);
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        }
+        else {
+            mousePressed = false;
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        }
+    }
+}
+
+void cursor_position_callback(GLFWwindow* window, double xPos, double yPos) {
+     if (!mousePressed) {
+         return;
+     }
+    camera.rotate(xPos, yPos);
+}
+
+void updateCamera() {
+    view = camera.update();
+    projection = glm::perspective(glm::radians(45.0f), windowWidth / windowHeight, 0.01f, 100000.0f);
+}
+
