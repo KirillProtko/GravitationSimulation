@@ -8,7 +8,11 @@
 #include <random>
 //          files
 
+#include <memory>
+
 #include "Classes/object.h"
+#include "Classes/star.h"
+
 #include "Classes/camera.h"
 #include "Classes/grid2D.h"
 
@@ -54,6 +58,7 @@ void addObject();
 void inactivateObject(Object object);
 void deleteObject();
 void initializeObjects();
+void togglePaths();
 GLuint createShaders();
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -65,6 +70,7 @@ void cursor_position_callback(GLFWwindow* window, double xPos, double yPos);
 // GLOBAL VARIABLES
 //
 bool pause = false, mousePressed = false;
+bool showPaths = true; // turn on/off paths of objects orbits
 
 //          constant variables
 constexpr double G = 6.6743e-11;
@@ -75,8 +81,8 @@ float windowWidth, windowHeight;
 
 //          vectors of active Objects (star, planets, black holes, etc.), which must be on screen
 std::vector<Object> activeObjects = {
-    Object(2000, 20,glm::vec3 {0.0f, 0.0f, 0.0f}),
-    Object(20, 2,glm::vec3 {5.0f, 0.0f, 0.0f})
+    Object((Star(2000, 20, glm::vec3{0.0f, 0.0f, 0.0f}, 20000.0f))), // NOLINT(*-slicing)
+    Object(200, 2,glm::vec3 {5.0f, 0.0f, 0.0f})
 };
 //          vectors of inactive objects, in future they're going to deleting
 std::vector<Object> inactiveObjects = {};
@@ -156,7 +162,7 @@ int main() {
 
         updateCamera();
         //          GRID RENDER
-        Grid2D grid = Grid2D(40, 150);
+        Grid2D grid = Grid2D(100, 300);
         grid.vertices = grid.getVertices(activeObjects);
         grid.vertexCount = grid.vertices.size();
         grid.createVBOVAO(grid.VAO, grid.VBO, grid.vertices.data(), grid.vertices.size());
@@ -211,9 +217,12 @@ int main() {
             if (!pause) {
                 updateState();
             }
-            auto model = glm::mat4(1.0f);
+            if (showPaths) {
+                togglePaths();
+            }
+            model = glm::mat4(1.0f);
             model = glm::translate(model, object.position);
-            glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f);
+            color = object.objectColor;
             glUseProgram(shaderProgram);
 
             glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
@@ -227,14 +236,7 @@ int main() {
         }
         // for (Object& toDelete : inactiveObjects) {
         //     std::erase(inactiveObjects, toDelete);
-        //     auto ptr = std::make_unique<Object>(toDelete);
-        //     glBindVertexArray(0);
-        //     glDeleteVertexArrays(1, &toDelete.VAO);
-        //     toDelete.VAO = 0;
-        //     glDeleteBuffers(1, &toDelete.VBO);
-        //     toDelete.VBO = 0;
-        //
-        //     delete &ptr;
+        //     delete &toDelete;
         // }
 
         //events and buffer change
@@ -281,16 +283,23 @@ void updateState() {
     }
 }
 
+bool spacePressed = false;
 void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
         glfwSetWindowShouldClose(window, true);
     }
     if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-        if (pause == true) {
-            pause = false;
-        } else {
-            pause = true;
+
+        if (!spacePressed) {
+            if (pause == true) {
+                pause = false;
+            } else {
+                pause = true;
+            }
         }
+        spacePressed = true;
+    } else if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_RELEASE) {
+        spacePressed = false;
     }
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
         addObject();
@@ -379,3 +388,6 @@ void updateCamera() {
     projection = glm::perspective(glm::radians(45.0f), windowWidth / windowHeight, 0.01f, 100000.0f);
 }
 
+void togglePaths() {
+
+}

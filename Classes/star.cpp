@@ -5,13 +5,33 @@
 #include "star.h"
 
 
-Star::Star(float mass, float dencity, glm::vec3 position) : Object(mass, dencity, position) {
+Star::Star(float mass, float dencity, glm::vec3 position, float temperature) : Object(mass, dencity, position) {
     this->type = "star";
+    SetTemperature(temperature);
     SetLuminosity();
 }
 
-void Star::SetColor() {
-
+glm::vec3 Star::GetColor() {
+    if (this->temperature <= 2500.0f)
+        return {1.0f, 0.3f, 0.1f};  // Dark red
+    else if (this->temperature <= 3500.0f)
+        return {1.0f, 0.5f, 0.2f};  // Red
+    else if (this->temperature <= 4500.0f)
+        return {1.0f, 0.7f, 0.3f};  // Orange
+    else if (this->temperature <= 5500.0f)
+        return {1.0f, 0.9f, 0.5f};  // Yellow-orange
+    else if (this->temperature <= 6500.0f)
+        return {1.0f, 1.0f, 0.7f};  // Yellow
+    else if (this->temperature <= 8000.0f)
+        return {0.9f, 0.95f, 1.0f}; // White-yellow
+    else if (this->temperature <= 10000.0f)
+        return {0.8f, 0.9f, 1.0f};  // White
+    else if (this->temperature <= 15000.0f)
+        return {0.7f, 0.8f, 1.0f};  // Blue-white
+     else if (this->temperature <= 25000.0f)
+        return {0.6f, 0.7f, 1.0f};  // Light blue
+    else
+        return {0.4f, 0.6f, 1.0f}; // Blue
 }
 
 void Star::SetLuminosity() {
@@ -33,5 +53,5 @@ void Star::SetLuminosity() {
 
 void Star::SetTemperature(float newTemperature) {
     this->temperature = newTemperature;
-    SetColor();
+    this->objectColor = GetColor();
 }

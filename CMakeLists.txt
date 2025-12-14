@@ -14,6 +14,7 @@ add_executable(GravitationSimulation main.cpp
         Classes/camera.h
         Classes/grid2D.cpp
         Classes/grid2D.h
+        Classes/star.cpp
 
 )
 
