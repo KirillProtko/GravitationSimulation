@@ -15,13 +15,13 @@ class Object {  //random object with user params
 public:
         GLuint VBO, VAO;
 
-        glm::vec3 position, objectColor = {1.0f, 1.0f, 1.0f}, velocity = {0.0f, 0.0f, 0.0f};
+        glm::vec3 position, objectColor = {1.0f, 0.5f, 0.25f}, velocity = {0.0f, 0.0f, 0.0f};
         size_t vertexCount;
 
         float mass, dencity, radius;
         std::string type;
 
-        bool Initilized = false, Active = true, Selected = false;
+        bool Initilized = false, Active = true, Selected = false, isLightSource = false;
 
         explicit Object(float mass, float dencity, glm::vec3 position);
         // ~Object();

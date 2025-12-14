@@ -7,6 +7,7 @@
 
 Star::Star(float mass, float dencity, glm::vec3 position, float temperature) : Object(mass, dencity, position) {
     this->type = "star";
+    this->isLightSource = true;
     SetTemperature(temperature);
     SetLuminosity();
 }

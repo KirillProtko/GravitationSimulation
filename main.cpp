@@ -22,7 +22,49 @@ std::uniform_real_distribution<double> distribution(-20,20);
 //
 // SHADERS
 //
-const char *vertexShaderSource = R"glsl(
+const char* vertexDefaultShaderSource = R"glsl(
+#version 330 core
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec3 aNormal;
+uniform mat4 projection;
+uniform mat4 model;
+uniform mat4 view;
+
+out vec3 Normal;
+out vec3 FragPos;
+
+void main()
+{
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
+    Normal = mat3(transpose(inverse(model))) * aNormal;
+    FragPos = vec3( model * vec4(aPos, 1.0));
+})glsl";
+// i don't care about light color, so by default it will be just vec3(1.0f)
+const char* fragmentDefaultShaderSource = R"glsl(
+#version 330 core
+out vec4 FragColor;
+
+in vec3 Normal;
+in vec3 FragPos;
+
+uniform vec3 lightColor;
+uniform vec3 lightPos;
+uniform vec3 objectColor;
+
+void main() {
+    float ambientStrength = 0.5f;
+    vec3 ambient = ambientStrength * lightColor;
+
+    vec3 norm = normalize(Normal);
+    vec3 lightDir = normalize(lightPos - FragPos);
+    float diff = max(dot(norm, lightDir), 0.0);
+    vec3 diffuse = diff * lightColor;
+
+    FragColor = vec4(objectColor * (ambient + diffuse), 1.0f);
+})glsl";
+
+// light
+const char* vertexLightShaderSource = R"glsl(
 #version 330 core
 layout (location = 0) in vec3 aPos;
 uniform mat4 projection;
@@ -33,16 +75,13 @@ void main()
     gl_Position = projection * view * model * vec4(aPos, 1.0);
 })glsl";
 
-const char* fragmentShaderSource = R"glsl(
+const char* fragmentLightShaderSource = R"glsl(
 #version 330 core
 out vec4 FragColor;
 uniform vec3 objectColor;
 void main() {
     FragColor = vec4(objectColor, 1.0f);
 })glsl";
-
-const char* fragmentLightShaderSource = R"glsl(
-)glsl";
 //
 // CAMERA
 //
@@ -59,7 +98,7 @@ void inactivateObject(Object object);
 void deleteObject();
 void initializeObjects();
 void togglePaths();
-GLuint createShaders();
+GLuint createShaders(const char* vertexShaderSource, const char* fragmentShaderSource);
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void scroll_callback(GLFWwindow* window, double xOffset, double yOffset);
@@ -88,7 +127,7 @@ std::vector<Object> activeObjects = {
 std::vector<Object> inactiveObjects = {};
 
 //          matrices for vertex shader
-glm::mat4 view, projection;
+glm::mat4 view, projection, model;
 
 //
 // MAIN
@@ -133,22 +172,32 @@ int main() {
     glViewport(0, 0, screenWidth, screenHeight);
 
     //shader program
-    GLuint shaderProgram = createShaders();
+    GLuint defaultShaderProgram = createShaders(vertexDefaultShaderSource, fragmentDefaultShaderSource);
+    GLuint lightShaderProgram = createShaders(vertexLightShaderSource, fragmentLightShaderSource);
 
-    std::cout << glGetString(GL_VERSION);
-    std::cout << std::endl << GLVersion.major << GLVersion.minor <<std::endl;
+    // locations of uniform variables for default shaders
+    GLint modelLoc = glGetUniformLocation(defaultShaderProgram, "model");
+    GLint projectionLoc = glGetUniformLocation(defaultShaderProgram, "projection");
+    GLint viewLoc = glGetUniformLocation(defaultShaderProgram, "view");
+    GLint objectColorLoc = glGetUniformLocation(defaultShaderProgram, "objectColor");
+    GLint lightColorLoc = glGetUniformLocation(defaultShaderProgram, "lightColor");
+    GLint lightPosLoc = glGetUniformLocation(defaultShaderProgram, "lightPos");
 
-    // locations of uniform variables
-    GLint modelLoc = glGetUniformLocation(shaderProgram, "model");
-    GLint projectionLoc = glGetUniformLocation(shaderProgram, "projection");
-    GLint viewLoc = glGetUniformLocation(shaderProgram, "view");
+    // locations of uniform variables for light shaders
+    GLint lightModelLoc = glGetUniformLocation(lightShaderProgram, "model");
+    GLint lightProjectionLoc = glGetUniformLocation(lightShaderProgram, "projection");
+    GLint lightViewLoc = glGetUniformLocation(lightShaderProgram, "view");
+    GLint lightObjectColorLoc = glGetUniformLocation(lightShaderProgram, "objectColor");
 
-    GLint colorLoc = glGetUniformLocation(shaderProgram, "objectColor");
+
+    auto lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
+    glm::vec3 lightPos;
 
     initializeObjects();
     // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glEnable(GL_DEPTH_TEST);
 
+    Grid2D grid = Grid2D(100, 300);
 
     // Main loop
     while (!glfwWindowShouldClose(window)) {
@@ -162,19 +211,18 @@ int main() {
 
         updateCamera();
         //          GRID RENDER
-        Grid2D grid = Grid2D(100, 300);
         grid.vertices = grid.getVertices(activeObjects);
         grid.vertexCount = grid.vertices.size();
         grid.createVBOVAO(grid.VAO, grid.VBO, grid.vertices.data(), grid.vertices.size());
-        auto model = glm::mat4(1.0f);
+        model = glm::mat4(1.0f);
         model = glm::translate(model, {0.0f, 0.0f, 0.0f});
         glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f);
-        glUseProgram(shaderProgram);
+        glUseProgram(lightShaderProgram);
 
-        glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-        glUniform3fv(colorLoc, 1, glm::value_ptr(color));
+        glUniformMatrix4fv(lightProjectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+        glUniformMatrix4fv(lightModelLoc, 1, GL_FALSE, glm::value_ptr(model));
+        glUniformMatrix4fv(lightViewLoc, 1, GL_FALSE, glm::value_ptr(view));
+        glUniform3fv(lightObjectColorLoc, 1, glm::value_ptr(color));
 
         glBindVertexArray(grid.VAO);
         glDrawArrays(GL_LINES, 0, grid.vertexCount / 3);
@@ -223,15 +271,34 @@ int main() {
             model = glm::mat4(1.0f);
             model = glm::translate(model, object.position);
             color = object.objectColor;
-            glUseProgram(shaderProgram);
+            // if object is a light source, then using light shader program, if not - use normal shader program
+            if (object.isLightSource == true) {
+                glUseProgram(lightShaderProgram);
 
-            glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
-            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-            glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-            glUniform3fv(colorLoc, 1, glm::value_ptr(color));
+                glUniformMatrix4fv(lightProjectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+                glUniformMatrix4fv(lightModelLoc, 1, GL_FALSE, glm::value_ptr(model));
+                glUniformMatrix4fv(lightViewLoc, 1, GL_FALSE, glm::value_ptr(view));
+                glUniform3fv(lightObjectColorLoc, 1, glm::value_ptr(color));
 
-            glBindVertexArray(object.VAO);
-            glDrawArrays(GL_TRIANGLES, 0, object.vertexCount / 3);
+                glBindVertexArray(object.VAO);
+                glDrawArrays(GL_TRIANGLES, 0, object.vertexCount / 6);
+
+                lightPos = object.position;
+            }
+            else {
+                glUseProgram(defaultShaderProgram);
+
+                glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+                glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+                glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+                glUniform3fv(objectColorLoc, 1, glm::value_ptr(color));
+
+                glUniform3fv(lightColorLoc, 1, glm::value_ptr(lightColor));
+                glUniform3fv(lightPosLoc, 1, glm::value_ptr(lightPos));
+
+                glBindVertexArray(object.VAO);
+                glDrawArrays(GL_TRIANGLES, 0, object.vertexCount / 6);
+            }
             glBindVertexArray(0);
         }
         // for (Object& toDelete : inactiveObjects) {
@@ -248,7 +315,7 @@ int main() {
         glDeleteVertexArrays(1, &obj.VAO);
         glDeleteBuffers(1, &obj.VBO);
     }
-    glDeleteProgram(shaderProgram);
+    glDeleteProgram(defaultShaderProgram);
 
     glfwTerminate(); // this world is cruel and everything is going to end, just like this program
     return 0;
@@ -306,7 +373,7 @@ void processInput(GLFWwindow *window) {
     }
 }
 
-GLuint createShaders() {
+GLuint createShaders(const char* vertexShaderSource,const  char* fragmentShaderSource) {
     // vertex shader
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
