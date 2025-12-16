@@ -24,6 +24,7 @@ public:
         bool Initilized = false, Active = true, Selected = false, IsLightSource = false;
 
         explicit Object(float mass, float dencity, glm::vec3 position);
+        explicit Object(float mass, float dencity, glm::vec3 position, glm::vec3 initVelocity);
         // ~Object();
         void init();
 

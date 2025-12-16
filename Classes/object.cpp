@@ -11,6 +11,13 @@ Object::Object(float mass, float dencity, glm::vec3 position) {
     this->radius = getRadius(mass, dencity);
     this->position = position;
 }
+Object::Object(float mass, float dencity, glm::vec3 position, glm::vec3 initVelocity) {
+    this->mass = mass;
+    this->dencity = dencity;
+    this->radius = getRadius(mass, dencity);
+    this->position = position;
+    this->velocity = initVelocity;
+}
 
 // Object::~Object() {
 //     std::cout << "Object " << this->VAO << " destroyed. Type: " << this->type << std::endl;
@@ -31,11 +38,6 @@ void Object::init() {
               << vertexCount / 3 << " points, "
               << vertexCount / 9 << " triangles)" << std::endl;
 
-    if (vertices.size() >= 6) {
-        std::cout << "First vertex: " << vertices[0] << ", " << vertices[1] << ", " << vertices[2] << std::endl;
-        std::cout << "Second vertex: " << vertices[3] << ", " << vertices[4] << ", " << vertices[5] << std::endl;
-    }
-
     createVBOVAO(this->VAO, this->VBO, vertices.data(), this->vertexCount);
 
     std::cout << "VAO created: " << VAO << ", VBO: " << VBO << std::endl;
@@ -45,17 +47,17 @@ void Object::init() {
 
 void Object::setMass(float newMass) {
     this->mass = newMass;
-    getRadius(newMass, this->dencity);
+    this->radius = getRadius(newMass, this->dencity);
 }
 
 float Object::getRadius(float newMass, float newDencity) {
-    return pow((3*newMass/newDencity)/4*glm::pi<float>(), 1.0f/3.0f)/50.0f;
+    return pow((3*newMass/newDencity)/4*glm::pi<float>(), 1.0f/3.0f)/2000000.0f;
 }
 
 void Object::updatePosition() {
-    this->position[0] += this->velocity[0];
-    this->position[1] += this->velocity[1];
-    this->position[2] += this->velocity[2];
+    this->position[0] += this->velocity[0]/100;
+    this->position[1] += this->velocity[1]/100;
+    this->position[2] += this->velocity[2]/100;
 }
 
 void Object::accelerateObject(glm::vec3 acceleration) {

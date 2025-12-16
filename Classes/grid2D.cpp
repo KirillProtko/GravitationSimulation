@@ -9,12 +9,24 @@ Grid2D::Grid2D(int divisions, float width) {
     this->width = width/10;
 }
 
+void Grid2D::setDivisions(int newDivisions) {
+    this->divisions = newDivisions;
+}
+
+void Grid2D::setWidth(float newWidth) {
+    this->width = newWidth;
+}
+
+void Grid2D::setColor(glm::vec3 newColor) {
+    this->color = newColor;
+}
+
 std::vector<float> Grid2D::getVertices(std::vector<Object> activeObjects) {
     // this code is bullshit
     std::vector<float> vertices;
     float step = width / divisions;
     float half = divisions / 2.0f;
-    float maxY = 0;
+    float ratio = 0.25e-20f;
     float x1, x2, y1 , y2, y3, y4, z1, z2;
     // 4 points
     for (int i = -half; i < half; i++) {
@@ -33,15 +45,15 @@ std::vector<float> Grid2D::getVertices(std::vector<Object> activeObjects) {
                     float distance2 = sqrt(dx1 * dx1 + dz2 * dz2);
                     float distance3 = sqrt(dx2 * dx2 + dz2 * dz2);
                     float distance4 = sqrt(dx2 * dx2 + dz1 * dz1);
-                    float force1 = object.mass / (distance1 * distance1 + 0.1f);
-                    float force2 = object.mass / (distance2 * distance2 + 0.1f);
-                    float force3 = object.mass / (distance3 * distance3 + 0.1f);
-                    float force4 = object.mass / (distance4 * distance4 + 0.1f);
+                    float force1 = object.mass / (distance1 * distance1 * distance1 + 0.1f);
+                    float force2 = object.mass / (distance2 * distance2 * distance2 + 0.1f);
+                    float force3 = object.mass / (distance3 * distance3 * distance3 + 0.1f);
+                    float force4 = object.mass / (distance4 * distance4 * distance4 + 0.1f);
 
-                    y1 -= force1 * 0.001f;
-                    y2 -= force2 * 0.001f;
-                    y3 -= force3 * 0.001f;
-                    y4 -= force4 * 0.001f;
+                    y1 -= force1 * ratio;
+                    y2 -= force2 * ratio;
+                    y3 -= force3 * ratio;
+                    y4 -= force4 * ratio;
             }
             glm::vec3 v1(x1, y1, z1);
             glm::vec3 v2(x1, y2, z2);

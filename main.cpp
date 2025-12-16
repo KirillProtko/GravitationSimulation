@@ -137,12 +137,14 @@ void scroll_callback(GLFWwindow* window, double xOffset, double yOffset);
 void mouse_button_callback(GLFWwindow* window, int button, int action, int mods);
 void cursor_position_callback(GLFWwindow* window, double xPos, double yPos);
 
+void setScenario(int keyNumber);
+
 //
 // GLOBAL VARIABLES
 //
 bool pause = false, mousePressed = false;
 bool showPaths = true; // turn on/off paths of objects orbits
-
+int chaseObject = -1;
 //          constant variables
 constexpr double G = 6.6743e-11;
 
@@ -151,16 +153,20 @@ float windowWidth, windowHeight;
 
 //          vectors of active Objects (star, planets, black holes, etc.), which must be on screen
 std::vector<Object> activeObjects = {
-    static_cast<Object>(Star(2000, 20, glm::vec3{-5.0f, 0.0f, 0.0f}, 20000.0f)),
-    static_cast<Object>((Star(2000, 20, glm::vec3{0.0f, 0.0f, -5.0f}, 6800.0f))),
-    Object(200, 2,glm::vec3 {0.0f, 0.0f, 0.0f})
+    static_cast<Object>(Star(2.34e22, 1000, glm::vec3{0.0f, 0.0f, 0.0f}, 5772.0f)),
+    // static_cast<Object>((Star(200000, 1000, glm::vec3{0.0f, 0.0f, -5.0f}, 6800.0f))),
+    Object(3.11e18, 100,glm::vec3 {10.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 2.8f})
 };
 //          vectors of inactive objects, in future they're going to deleting
 std::vector<Object> inactiveObjects = {};
 
+Grid2D grid = Grid2D(100, 300);
+
 //          matrices for vertex shader
 glm::mat4 view, projection, model;
 
+
+std::string theme = "dark";
 //
 // MAIN
 //
@@ -175,8 +181,8 @@ int main() {
     glfwWindowHint(GLFW_OPENGL_ANY_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     GLFWmonitor *monitor = glfwGetPrimaryMonitor();
-    const float screenWidth = (glfwGetVideoMode(monitor)->width - 400.0f);
-    const float screenHeight = (glfwGetVideoMode(monitor)->height - 200.0f);
+    const float screenWidth = (glfwGetVideoMode(monitor)->width - 200.0f);
+    const float screenHeight = (glfwGetVideoMode(monitor)->height - 100.0f);
     windowWidth = screenWidth;
     windowHeight = screenHeight;
 
@@ -228,7 +234,11 @@ int main() {
     // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glEnable(GL_DEPTH_TEST);
 
-    Grid2D grid = Grid2D(100, 300);
+
+
+    double lastTime = glfwGetTime();
+    int frameCount = 0;
+    double fpsUpdateInterval = 0.5;
 
     // Main loop
     while (!glfwWindowShouldClose(window)) {
@@ -236,9 +246,19 @@ int main() {
         processInput(window);
 
         // starting render
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        if (theme == "dark") {
+            glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+            grid.setColor({0.9f, 0.9f, 0.9f});
+        } else {
+            glClearColor(0.9f, 0.9f, 0.9f, 1.0f);
+            grid.setColor({0.0f, 0.0f, 0.0f});
+        }
         // glClear(GL_COLOR_BUFFER_BIT);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        if (chaseObject != -1) {
+            camera.SetTarget(activeObjects[chaseObject].position);
+        }
 
         updateCamera();
         //          GRID RENDER
@@ -247,7 +267,7 @@ int main() {
         grid.createVBOVAO(grid.VAO, grid.VBO, grid.vertices.data(), grid.vertices.size());
         model = glm::mat4(1.0f);
         model = glm::translate(model, {0.0f, 0.0f, 0.0f});
-        glm::vec3 color = glm::vec3(0.2f, 0.2f, 0.2f);
+        glm::vec3 color = grid.color;
         glUseProgram(lightShaderProgram);
 
         glUniformMatrix4fv(lightProjectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
@@ -285,19 +305,17 @@ int main() {
                         float distance = sqrt(dx * dx + dy * dy + dz * dz); //r
 
                         if (distance > 0) { //preventing undefined behaviour
-                            float gravityForce = G * ((object.mass*object2.mass)/(distance * distance)); // F=G(m_1*m_2/r^2)
-
+                            float gravityForce = (G * object.mass*object2.mass)/((distance*10000) * (distance*10000)); // F=G(m_1*m_2/r^2)
                             if (!pause) {
-                                float acceleration = gravityForce * object2.mass; //    F/m
-                                float x = -dx/distance;
-                                float y = -dy/distance;
-                                float z = -dz/distance;
+                                float acceleration = gravityForce / object.mass; //    F/m
+                                float x = dx/distance;
+                                float y = dy/distance;
+                                float z = dz/distance;
                                 glm::vec3 accelerationVector = {x*acceleration, y*acceleration, z*acceleration};
-                                object2.accelerateObject(accelerationVector);
+                                object.accelerateObject(accelerationVector);
                             }
                         }
                         if (object.checkCollision(&object2)) {
-                            std::cout << "Collide between " << object.VAO << " and " << object2.VAO << std::endl;
                             inactivateObject(object);
                             inactivateObject(object2);
                         }
@@ -343,6 +361,15 @@ int main() {
         //     std::erase(inactiveObjects, toDelete);
         //     delete &toDelete;
         // }
+        double currentTime = glfwGetTime();
+        frameCount++;
+        if (currentTime - lastTime >= fpsUpdateInterval) {
+            double fps = frameCount / (currentTime - lastTime);
+            std::string title = "Simulation - FPS: " + std::to_string(static_cast<int>(fps));
+            glfwSetWindowTitle(window, title.c_str());
+            frameCount = 0;
+            lastTime = currentTime;
+        }
 
         //events and buffer change
         glfwSwapBuffers(window);
@@ -363,7 +390,7 @@ int main() {
 // main functions (definitions)
 //
 void addObject() {
-    activeObjects.emplace_back(rand() % 10000, rand() % 10+1 , glm::vec3 {distribution(generator), distribution(generator), distribution(generator)});
+    activeObjects.emplace_back(rand() * 1e16f, rand() % 10+1000 , glm::vec3 {distribution(generator), 0, distribution(generator)});
     initializeObjects();
 }
 
@@ -389,6 +416,8 @@ void updateState() {
 }
 
 bool spacePressed = false;
+bool numberKeyPressed = false;
+bool themeChanging = false;
 void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
         glfwSetWindowShouldClose(window, true);
@@ -406,8 +435,50 @@ void processInput(GLFWwindow *window) {
     } else if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_RELEASE) {
         spacePressed = false;
     }
+    if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS) {
+
+        if (!themeChanging) {
+            if (theme == "dark") {
+                theme = "white";
+            } else {
+                theme = "dark";
+            }
+        }
+        themeChanging = true;
+    } else if (glfwGetKey(window, GLFW_KEY_T) == GLFW_RELEASE) {
+        themeChanging = false;
+    }
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
         addObject();
+    }
+
+
+    if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
+
+        if (!numberKeyPressed) {
+            setScenario(1);
+        }
+        numberKeyPressed = true;
+    } else if (glfwGetKey(window, GLFW_KEY_1) == GLFW_RELEASE) {
+        numberKeyPressed = false;
+    }
+    if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
+
+        if (!numberKeyPressed) {
+            setScenario(2);
+        }
+        numberKeyPressed = true;
+    } else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_RELEASE) {
+        numberKeyPressed = false;
+    }
+    if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS) {
+
+        if (!numberKeyPressed) {
+            setScenario(3);
+        }
+        numberKeyPressed = true;
+    } else if (glfwGetKey(window, GLFW_KEY_3) == GLFW_RELEASE) {
+        numberKeyPressed = false;
     }
 }
 
@@ -494,13 +565,13 @@ void updateCamera() {
 }
 
 void togglePaths() {
-
+    //bruh
 }
 
 void setLightSource(Object& object, int index, GLuint defaultShaderProgram) {
     float constant = 1.0f;
-    float linear = 0.09f;
-    float quadratic = 0.032f;
+    float linear = 0.009f;
+    float quadratic = 0.0032f;
     glm::vec3 position = object.position;
     glm::vec3 ambient {0.2f};
     glm::vec3 diffuse {1.0f};
@@ -520,3 +591,40 @@ void setLightSource(Object& object, int index, GLuint defaultShaderProgram) {
     location = glGetUniformLocation(defaultShaderProgram, (name + ".quadratic").c_str());
     glUniform1f(location, quadratic);
 }
+
+void setScenario(int keyNumber) {
+    chaseObject = -1;
+    switch (keyNumber) {
+        case 1:
+            activeObjects = {
+            static_cast<Object>(Star(2.34e22, 1000, glm::vec3{0.0f, 0.0f, 0.0f}, 5772.0f)),
+            Object(3.11e18, 100,glm::vec3 {10.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 2.8f})
+        };
+            camera.SetTarget({0.0f, 0.0f , 0.0f});
+            break;
+        case 2:
+            activeObjects = {
+            static_cast<Object>(Star(2.34e23, 1409, glm::vec3{10.0f, 0.0f, 0.0f}, 5000.0f)),
+            static_cast<Object>(Star(2.34e23, 1409, glm::vec3{-10.0f, 0.0f, 0.0f}, 6800.0f))
+        };
+            activeObjects[1].velocity[2] = 4;
+            activeObjects[0].velocity[2] = -4;
+            camera.SetTarget({0.0f, 0.0f , 0.0f});
+            break;
+        case 3:
+            activeObjects = {
+            static_cast<Object>(Star(2.34e22, 1409, glm::vec3{0.0f, 0.0f, 0.0f}, 5772.0f)),
+            Object(6.11e17, 123,glm::vec3 {5.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 2.8f}),
+            Object(3.33022e19, 336.4,glm::vec3 {-10.0f, 0.0f, -0.5f}, {0.0f, 0.0f, 2.2f}),
+            Object(1.223e20, 480,glm::vec3 {0.0f, 0.0f, -15.5f}, {1.5f, 0.0f, 0.0f})
+        };
+            activeObjects[3].objectColor = {0.5f, 0.5f, 1.0f};
+            camera.SetTarget(activeObjects[3].position);
+            chaseObject = 3;
+            break;
+        default:
+            break;
+    }
+    initializeObjects();
+}
+
