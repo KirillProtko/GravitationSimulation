@@ -62,6 +62,10 @@ void Camera::SetFirstMouse(bool newValue) {
     firstMouse = newValue;
 }
 
+void Camera::SetTarget(glm::vec3 newTarget) {
+    target = newTarget;
+}
+
 glm::vec3 Camera::GetPosition() {
     return this->position;
 }

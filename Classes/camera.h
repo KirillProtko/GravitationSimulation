@@ -39,6 +39,7 @@ public:
     void SetMinimalDistance(float newMinimalDistance);
     void SetSensitivity(float newSensitivity);
     void SetFirstMouse(bool newValue);
+    void SetTarget(glm::vec3 newTarget);
 
     glm::vec3 GetPosition();
 

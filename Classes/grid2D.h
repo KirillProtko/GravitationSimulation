@@ -18,8 +18,12 @@ public:
     GLuint VBO, VAO;
     std::vector<float> vertices;
     int vertexCount;
+    glm::vec3 color;
     Grid2D(int divisions, float width);
     std::vector<float> getVertices(std::vector<Object> activeObjects);
+    void setDivisions(int newDivisions);
+    void setWidth(float newWidth);
+    void setColor(glm::vec3 newColor);
 
     void createVBOVAO(GLuint& VAO, GLuint& VBO, const float* vertices, size_t vertexCount);
 };
