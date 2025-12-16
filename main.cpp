@@ -8,6 +8,7 @@
 #include <random>
 //          files
 
+#include <algorithm>
 #include <memory>
 
 #include "Classes/object.h"
@@ -47,20 +48,50 @@ out vec4 FragColor;
 in vec3 Normal;
 in vec3 FragPos;
 
-uniform vec3 lightColor;
-uniform vec3 lightPos;
+uniform vec3 viewPos;
 uniform vec3 objectColor;
 
+struct Light {
+    vec3 position;
+
+    vec3 diffuse;
+    vec3 ambient;
+
+    float constant;
+    float linear;
+    float quadratic;
+};
+#define MAX_LIGHTS 32
+
+uniform int lengthOfArray;
+uniform Light lightArray[MAX_LIGHTS];
+
+vec3 CalculateLight(Light light, vec3 normal, vec3 fragPos) {
+    vec3 lightDir = normalize(light.position - fragPos);
+
+    vec3 ambient = light.ambient;
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = light.diffuse * diff;
+
+    float distance = length(light.position - fragPos);
+    float attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));
+
+    ambient *= attenuation;
+    diffuse *= attenuation;
+
+    return (ambient + diffuse);
+}
+
 void main() {
-    float ambientStrength = 0.5f;
-    vec3 ambient = ambientStrength * lightColor;
 
     vec3 norm = normalize(Normal);
-    vec3 lightDir = normalize(lightPos - FragPos);
-    float diff = max(dot(norm, lightDir), 0.0);
-    vec3 diffuse = diff * lightColor;
 
-    FragColor = vec4(objectColor * (ambient + diffuse), 1.0f);
+    vec3 result =  vec3(0.0);
+    for (int i = 0; i < lengthOfArray; i++) {
+        result += CalculateLight(lightArray[i], norm, FragPos);
+    }
+    FragColor = vec4(objectColor * result, 1.0f);
+
 })glsl";
 
 // light
@@ -94,11 +125,12 @@ void processInput(GLFWwindow *window);
 void updateState();
 void updateCamera();
 void addObject();
-void inactivateObject(Object object);
+void inactivateObject(Object& object);
 void deleteObject();
 void initializeObjects();
 void togglePaths();
 GLuint createShaders(const char* vertexShaderSource, const char* fragmentShaderSource);
+void setLightSource(Object& object, int index, GLuint defaultShaderProgram);
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void scroll_callback(GLFWwindow* window, double xOffset, double yOffset);
@@ -113,15 +145,15 @@ bool showPaths = true; // turn on/off paths of objects orbits
 
 //          constant variables
 constexpr double G = 6.6743e-11;
-constexpr double c = 299792458.0;
 
 float windowWidth, windowHeight;
 
 
 //          vectors of active Objects (star, planets, black holes, etc.), which must be on screen
 std::vector<Object> activeObjects = {
-    Object((Star(2000, 20, glm::vec3{0.0f, 0.0f, 0.0f}, 20000.0f))), // NOLINT(*-slicing)
-    Object(200, 2,glm::vec3 {5.0f, 0.0f, 0.0f})
+    static_cast<Object>(Star(2000, 20, glm::vec3{-5.0f, 0.0f, 0.0f}, 20000.0f)),
+    static_cast<Object>((Star(2000, 20, glm::vec3{0.0f, 0.0f, -5.0f}, 6800.0f))),
+    Object(200, 2,glm::vec3 {0.0f, 0.0f, 0.0f})
 };
 //          vectors of inactive objects, in future they're going to deleting
 std::vector<Object> inactiveObjects = {};
@@ -180,8 +212,7 @@ int main() {
     GLint projectionLoc = glGetUniformLocation(defaultShaderProgram, "projection");
     GLint viewLoc = glGetUniformLocation(defaultShaderProgram, "view");
     GLint objectColorLoc = glGetUniformLocation(defaultShaderProgram, "objectColor");
-    GLint lightColorLoc = glGetUniformLocation(defaultShaderProgram, "lightColor");
-    GLint lightPosLoc = glGetUniformLocation(defaultShaderProgram, "lightPos");
+    GLint amountOfLightsLoc = glGetUniformLocation(defaultShaderProgram, "lengthOfArray");
 
     // locations of uniform variables for light shaders
     GLint lightModelLoc = glGetUniformLocation(lightShaderProgram, "model");
@@ -190,8 +221,8 @@ int main() {
     GLint lightObjectColorLoc = glGetUniformLocation(lightShaderProgram, "objectColor");
 
 
-    auto lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
-    glm::vec3 lightPos;
+    int amountOfLightsSources = 0;
+    short currentIndex = 0;
 
     initializeObjects();
     // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -216,7 +247,7 @@ int main() {
         grid.createVBOVAO(grid.VAO, grid.VBO, grid.vertices.data(), grid.vertices.size());
         model = glm::mat4(1.0f);
         model = glm::translate(model, {0.0f, 0.0f, 0.0f});
-        glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f);
+        glm::vec3 color = glm::vec3(0.2f, 0.2f, 0.2f);
         glUseProgram(lightShaderProgram);
 
         glUniformMatrix4fv(lightProjectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
@@ -227,7 +258,18 @@ int main() {
         glBindVertexArray(grid.VAO);
         glDrawArrays(GL_LINES, 0, grid.vertexCount / 3);
         glBindVertexArray(0);
-
+        //          LIGHT
+        currentIndex = 0;
+        amountOfLightsSources = std::count_if(activeObjects.begin(), activeObjects.end(),
+                                           [](Object &object) { return object.IsLightSource; });
+        glUseProgram(defaultShaderProgram);
+        glUniform1i(amountOfLightsLoc, amountOfLightsSources);
+        for (auto& object : activeObjects) {
+            if (object.Initilized && object.IsLightSource) {
+                setLightSource(object, currentIndex, defaultShaderProgram);
+                currentIndex++;
+            }
+        }
 
         //          OBJECTS RENDER
         for (auto& object : activeObjects) {
@@ -255,6 +297,7 @@ int main() {
                             }
                         }
                         if (object.checkCollision(&object2)) {
+                            std::cout << "Collide between " << object.VAO << " and " << object2.VAO << std::endl;
                             inactivateObject(object);
                             inactivateObject(object2);
                         }
@@ -272,7 +315,7 @@ int main() {
             model = glm::translate(model, object.position);
             color = object.objectColor;
             // if object is a light source, then using light shader program, if not - use normal shader program
-            if (object.isLightSource == true) {
+            if (object.IsLightSource == true) {
                 glUseProgram(lightShaderProgram);
 
                 glUniformMatrix4fv(lightProjectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
@@ -282,8 +325,6 @@ int main() {
 
                 glBindVertexArray(object.VAO);
                 glDrawArrays(GL_TRIANGLES, 0, object.vertexCount / 6);
-
-                lightPos = object.position;
             }
             else {
                 glUseProgram(defaultShaderProgram);
@@ -292,9 +333,6 @@ int main() {
                 glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
                 glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
                 glUniform3fv(objectColorLoc, 1, glm::value_ptr(color));
-
-                glUniform3fv(lightColorLoc, 1, glm::value_ptr(lightColor));
-                glUniform3fv(lightPosLoc, 1, glm::value_ptr(lightPos));
 
                 glBindVertexArray(object.VAO);
                 glDrawArrays(GL_TRIANGLES, 0, object.vertexCount / 6);
@@ -329,9 +367,9 @@ void addObject() {
     initializeObjects();
 }
 
-void inactivateObject(Object object) {
+void inactivateObject(Object& object) {
     object.Active = false;
-
+    std::cout << "Inactivating object: " << object.VAO << ". Type: " << object.type << std::endl;
     std::erase(activeObjects, object);
     inactiveObjects.emplace_back(object);
 }
@@ -457,4 +495,28 @@ void updateCamera() {
 
 void togglePaths() {
 
+}
+
+void setLightSource(Object& object, int index, GLuint defaultShaderProgram) {
+    float constant = 1.0f;
+    float linear = 0.09f;
+    float quadratic = 0.032f;
+    glm::vec3 position = object.position;
+    glm::vec3 ambient {0.2f};
+    glm::vec3 diffuse {1.0f};
+
+    std::string name = "lightArray[" + std::to_string(index) + "]";
+    glUseProgram(defaultShaderProgram);
+    GLint location = glGetUniformLocation(defaultShaderProgram, (name + ".position").c_str());
+    glUniform3fv(location, 1, glm::value_ptr(position));
+    location = glGetUniformLocation(defaultShaderProgram, (name + ".ambient").c_str());
+    glUniform3fv(location, 1, glm::value_ptr(ambient));
+    location = glGetUniformLocation(defaultShaderProgram, (name + ".diffuse").c_str());
+    glUniform3fv(location, 1, glm::value_ptr(diffuse));
+    location = glGetUniformLocation(defaultShaderProgram, (name + ".constant").c_str());
+    glUniform1f(location, constant);
+    location = glGetUniformLocation(defaultShaderProgram, (name + ".linear").c_str());
+    glUniform1f(location, linear);
+    location = glGetUniformLocation(defaultShaderProgram, (name + ".quadratic").c_str());
+    glUniform1f(location, quadratic);
 }

@@ -40,6 +40,8 @@ public:
     void SetSensitivity(float newSensitivity);
     void SetFirstMouse(bool newValue);
 
+    glm::vec3 GetPosition();
+
 };
 
 

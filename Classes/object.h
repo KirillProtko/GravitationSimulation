@@ -19,9 +19,9 @@ public:
         size_t vertexCount;
 
         float mass, dencity, radius;
-        std::string type;
+        std::string type = "Object";
 
-        bool Initilized = false, Active = true, Selected = false, isLightSource = false;
+        bool Initilized = false, Active = true, Selected = false, IsLightSource = false;
 
         explicit Object(float mass, float dencity, glm::vec3 position);
         // ~Object();
@@ -33,7 +33,7 @@ public:
         void accelerateObject(glm::vec3 acceleration); // increasing velocity by acceleration giving from G-force
         void updateVertices();
         std::vector<float> getVertices(); //getting vertices for drawing spheres
-        bool checkCollision(Object *object2);
+        bool checkCollision(Object *object2) const;
 
         void createVBOVAO(GLuint& VAO, GLuint& VBO, const float* vertices, size_t vertexCount);
 

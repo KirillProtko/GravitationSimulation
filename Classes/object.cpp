@@ -134,13 +134,13 @@ void Object::createVBOVAO(GLuint& vao, GLuint& vbo, const float* vertices, size_
     glBindVertexArray(0);
 }
 
-bool Object::checkCollision(Object *object2) {
+bool Object::checkCollision(Object *object2) const {
     float dx = object2->position.x - this->position.x;
     float dy = object2->position.y - this->position.y;
     float dz = object2->position.z - this->position.z;
     float distance = sqrt(dx * dx + dy * dy + dz * dz);
     if (distance <= object2->radius + this->radius) {
-        std::cout << "Collide!" << std::endl;
+        std::cout << "Collide "<< this->VAO << " with "<< object2->VAO << std::endl;
         return true;
     }
     return false;

@@ -7,18 +7,15 @@
 
 
 #include "object.h"
-#include <stdio.h>
 
 
 class Star : public Object{
 private:
-    float temperature;
-    float luminosity;
-    void SetLuminosity();
+    // float luminosity;
+    // void SetLuminosity();
 public:
     Star(float mass, float dencity, glm::vec3 position, float temperature);
-    void SetTemperature(float newTemperature);
-    glm::vec3 GetColor();
+    glm::vec3 GetColor(float temperature);
 };
 
 
