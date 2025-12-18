@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <string>
 
 class Camera {
 private:
@@ -18,6 +19,7 @@ private:
     glm::vec3 front = glm::vec3(0.0f, 0.0f, -1.0f);
 
     bool firstMouse = true;
+    std::string mode = "centered";
 
     float distance;
     float minimalDistance = 2.5f;
@@ -40,6 +42,7 @@ public:
     void SetSensitivity(float newSensitivity);
     void SetFirstMouse(bool newValue);
     void SetTarget(glm::vec3 newTarget);
+    void SetMode(std::string mode);
 
     glm::vec3 GetPosition();
 

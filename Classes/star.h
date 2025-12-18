@@ -15,6 +15,7 @@ private:
     // void SetLuminosity();
 public:
     Star(float mass, float dencity, glm::vec3 position, float temperature);
+    Star(float mass, float dencity, glm::vec3 position, glm::vec3 initVelocity,float temperature);
     glm::vec3 GetColor(float temperature);
 };
 

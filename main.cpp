@@ -6,13 +6,13 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <vector>
 #include <random>
-//          files
-
 #include <algorithm>
 #include <memory>
+//          files
 
 #include "Classes/object.h"
 #include "Classes/star.h"
+#include "Classes/planet.h"
 
 #include "Classes/camera.h"
 #include "Classes/grid2D.h"
@@ -109,9 +109,31 @@ void main()
 const char* fragmentLightShaderSource = R"glsl(
 #version 330 core
 out vec4 FragColor;
+uniform vec4 objectColor;
+void main() {
+    FragColor = objectColor;
+})glsl";
+
+const char* vertexTrailShaderSource = R"glsl(
+#version 330 core
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in float aAlpha;
+uniform mat4 projection;
+uniform mat4 view;
+
+out float VertAlpha;
+void main() {
+    gl_Position = projection * view * vec4(aPos, 1.0);
+    VertAlpha = aAlpha;
+})glsl";
+
+const char* fragmentTrailShaderSource = R"glsl(
+#version 330 core
+in float VertAlpha;
+out vec4 FragColor;
 uniform vec3 objectColor;
 void main() {
-    FragColor = vec4(objectColor, 1.0f);
+    FragColor = vec4(objectColor, VertAlpha);
 })glsl";
 //
 // CAMERA
@@ -128,7 +150,6 @@ void addObject();
 void inactivateObject(Object& object);
 void deleteObject();
 void initializeObjects();
-void togglePaths();
 GLuint createShaders(const char* vertexShaderSource, const char* fragmentShaderSource);
 void setLightSource(Object& object, int index, GLuint defaultShaderProgram);
 
@@ -143,8 +164,9 @@ void setScenario(int keyNumber);
 // GLOBAL VARIABLES
 //
 bool pause = false, mousePressed = false;
-bool showPaths = true; // turn on/off paths of objects orbits
+bool showTrails = false;
 int chaseObject = -1;
+float gridOpacity = 1.0f;
 //          constant variables
 constexpr double G = 6.6743e-11;
 
@@ -154,8 +176,7 @@ float windowWidth, windowHeight;
 //          vectors of active Objects (star, planets, black holes, etc.), which must be on screen
 std::vector<Object> activeObjects = {
     static_cast<Object>(Star(2.34e22, 1000, glm::vec3{0.0f, 0.0f, 0.0f}, 5772.0f)),
-    // static_cast<Object>((Star(200000, 1000, glm::vec3{0.0f, 0.0f, -5.0f}, 6800.0f))),
-    Object(3.11e18, 100,glm::vec3 {10.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 2.8f})
+    static_cast<Object>(Planet(3.11e18, 100,glm::vec3 {10.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 4.0f}))
 };
 //          vectors of inactive objects, in future they're going to deleting
 std::vector<Object> inactiveObjects = {};
@@ -212,6 +233,7 @@ int main() {
     //shader program
     GLuint defaultShaderProgram = createShaders(vertexDefaultShaderSource, fragmentDefaultShaderSource);
     GLuint lightShaderProgram = createShaders(vertexLightShaderSource, fragmentLightShaderSource);
+    GLuint trailShaderProgram = createShaders(vertexTrailShaderSource, fragmentTrailShaderSource);
 
     // locations of uniform variables for default shaders
     GLint modelLoc = glGetUniformLocation(defaultShaderProgram, "model");
@@ -226,6 +248,10 @@ int main() {
     GLint lightViewLoc = glGetUniformLocation(lightShaderProgram, "view");
     GLint lightObjectColorLoc = glGetUniformLocation(lightShaderProgram, "objectColor");
 
+    //locations of uniform variables for trail shaders
+    GLint trailProjectionLoc = glGetUniformLocation(trailShaderProgram, "projection");
+    GLint trailViewLoc = glGetUniformLocation(trailShaderProgram, "view");
+    GLint trailObjectColorLoc = glGetUniformLocation(trailShaderProgram, "objectColor");
 
     int amountOfLightsSources = 0;
     short currentIndex = 0;
@@ -233,12 +259,13 @@ int main() {
     initializeObjects();
     // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glEnable(GL_DEPTH_TEST);
-
-
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     double lastTime = glfwGetTime();
     int frameCount = 0;
     double fpsUpdateInterval = 0.5;
+    glm::vec4 color;
 
     // Main loop
     while (!glfwWindowShouldClose(window)) {
@@ -253,7 +280,6 @@ int main() {
             glClearColor(0.9f, 0.9f, 0.9f, 1.0f);
             grid.setColor({0.0f, 0.0f, 0.0f});
         }
-        // glClear(GL_COLOR_BUFFER_BIT);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         if (chaseObject != -1) {
@@ -261,23 +287,7 @@ int main() {
         }
 
         updateCamera();
-        //          GRID RENDER
-        grid.vertices = grid.getVertices(activeObjects);
-        grid.vertexCount = grid.vertices.size();
-        grid.createVBOVAO(grid.VAO, grid.VBO, grid.vertices.data(), grid.vertices.size());
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, {0.0f, 0.0f, 0.0f});
-        glm::vec3 color = grid.color;
-        glUseProgram(lightShaderProgram);
 
-        glUniformMatrix4fv(lightProjectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
-        glUniformMatrix4fv(lightModelLoc, 1, GL_FALSE, glm::value_ptr(model));
-        glUniformMatrix4fv(lightViewLoc, 1, GL_FALSE, glm::value_ptr(view));
-        glUniform3fv(lightObjectColorLoc, 1, glm::value_ptr(color));
-
-        glBindVertexArray(grid.VAO);
-        glDrawArrays(GL_LINES, 0, grid.vertexCount / 3);
-        glBindVertexArray(0);
         //          LIGHT
         currentIndex = 0;
         amountOfLightsSources = std::count_if(activeObjects.begin(), activeObjects.end(),
@@ -316,22 +326,25 @@ int main() {
                             }
                         }
                         if (object.checkCollision(&object2)) {
-                            inactivateObject(object);
-                            inactivateObject(object2);
+                            if (object.mass > object2.mass * 10) {
+                                inactivateObject(object2);
+                                // object.setMass(object.mass + object.mass);
+                            }
+                            else if (object.mass * 10 < object2.mass) {
+                                inactivateObject(object);
+                                // object2.setMass(object2.mass + object.mass);
+                            }
+                            else {
+                                inactivateObject(object);
+                                inactivateObject(object2);
+                            }
                         }
                     }
                 }
             }
-
-            if (!pause) {
-                updateState();
-            }
-            if (showPaths) {
-                togglePaths();
-            }
             model = glm::mat4(1.0f);
             model = glm::translate(model, object.position);
-            color = object.objectColor;
+            color = glm::vec4(object.objectColor, 1.0f);
             // if object is a light source, then using light shader program, if not - use normal shader program
             if (object.IsLightSource == true) {
                 glUseProgram(lightShaderProgram);
@@ -339,7 +352,7 @@ int main() {
                 glUniformMatrix4fv(lightProjectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
                 glUniformMatrix4fv(lightModelLoc, 1, GL_FALSE, glm::value_ptr(model));
                 glUniformMatrix4fv(lightViewLoc, 1, GL_FALSE, glm::value_ptr(view));
-                glUniform3fv(lightObjectColorLoc, 1, glm::value_ptr(color));
+                glUniform4fv(lightObjectColorLoc, 1, glm::value_ptr(color));
 
                 glBindVertexArray(object.VAO);
                 glDrawArrays(GL_TRIANGLES, 0, object.vertexCount / 6);
@@ -355,12 +368,45 @@ int main() {
                 glBindVertexArray(object.VAO);
                 glDrawArrays(GL_TRIANGLES, 0, object.vertexCount / 6);
             }
+            if (showTrails) {
+                object.updateTrail();
+
+                color = glm::vec4(1.0f);
+                glUseProgram(trailShaderProgram);
+
+                glUniformMatrix4fv(trailProjectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+                glUniformMatrix4fv(trailViewLoc, 1, GL_FALSE, glm::value_ptr(view));
+                glUniform3fv(trailObjectColorLoc, 1, glm::value_ptr(color));
+
+                glBindVertexArray(object.TrailVAO);
+                glDrawArrays(GL_LINES, 0, object.trailVertices.size() / 4);
+            }
             glBindVertexArray(0);
         }
-        // for (Object& toDelete : inactiveObjects) {
-        //     std::erase(inactiveObjects, toDelete);
-        //     delete &toDelete;
-        // }
+        if (!pause) {
+            updateState();
+        }
+        //          GRID RENDER
+        // after all because it can be semi-transparent
+        if (gridOpacity != 0.0f) {
+            grid.vertices = grid.getVertices(activeObjects);
+            grid.vertexCount = grid.vertices.size();
+            grid.createVBOVAO(grid.VAO, grid.VBO, grid.vertices.data(), grid.vertices.size());
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, {0.0f, 0.0f, 0.0f});
+            glUseProgram(lightShaderProgram);
+            color = glm::vec4(grid.color, gridOpacity);
+
+            glUniformMatrix4fv(lightProjectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+            glUniformMatrix4fv(lightModelLoc, 1, GL_FALSE, glm::value_ptr(model));
+            glUniformMatrix4fv(lightViewLoc, 1, GL_FALSE, glm::value_ptr(view));
+            glUniform4fv(lightObjectColorLoc, 1, glm::value_ptr(color));
+
+            glBindVertexArray(grid.VAO);
+            glDrawArrays(GL_LINES, 0, grid.vertexCount / 3);
+            glBindVertexArray(0);
+        }
+        //      FPS COUNTER in windows title
         double currentTime = glfwGetTime();
         frameCount++;
         if (currentTime - lastTime >= fpsUpdateInterval) {
@@ -390,7 +436,7 @@ int main() {
 // main functions (definitions)
 //
 void addObject() {
-    activeObjects.emplace_back(rand() * 1e16f, rand() % 10+1000 , glm::vec3 {distribution(generator), 0, distribution(generator)});
+    activeObjects.emplace_back(rand() * 1e15f, rand() % 10+1000 , glm::vec3 {distribution(generator), 0, distribution(generator)});
     initializeObjects();
 }
 
@@ -418,6 +464,8 @@ void updateState() {
 bool spacePressed = false;
 bool numberKeyPressed = false;
 bool themeChanging = false;
+bool gridOpacityKey = false;
+bool toggleTrailsKey = false;
 void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
         glfwSetWindowShouldClose(window, true);
@@ -435,6 +483,42 @@ void processInput(GLFWwindow *window) {
     } else if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_RELEASE) {
         spacePressed = false;
     }
+
+    if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS) {
+
+        if (!toggleTrailsKey) {
+            if (showTrails == true) {
+                showTrails = false;
+            } else {
+                showTrails = true;
+            }
+        }
+        toggleTrailsKey = true;
+    } else if (glfwGetKey(window, GLFW_KEY_X) == GLFW_RELEASE) {
+        toggleTrailsKey = false;
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
+
+        if (!gridOpacityKey) {
+            if (gridOpacity < 1.0f)
+                gridOpacity += 0.1f;
+        }
+        gridOpacityKey = true;
+    } else if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_RELEASE) {
+        gridOpacityKey = false;
+    }
+    if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
+
+        if (!gridOpacityKey) {
+            if (gridOpacity > 0.0f)
+                gridOpacity -= 0.1f;
+        }
+        gridOpacityKey = true;
+    } else if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_RELEASE) {
+        gridOpacityKey = false;
+    }
+
     if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS) {
 
         if (!themeChanging) {
@@ -451,7 +535,6 @@ void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
         addObject();
     }
-
 
     if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
 
@@ -564,10 +647,6 @@ void updateCamera() {
     projection = glm::perspective(glm::radians(45.0f), windowWidth / windowHeight, 0.01f, 100000.0f);
 }
 
-void togglePaths() {
-    //bruh
-}
-
 void setLightSource(Object& object, int index, GLuint defaultShaderProgram) {
     float constant = 1.0f;
     float linear = 0.009f;
@@ -598,29 +677,24 @@ void setScenario(int keyNumber) {
         case 1:
             activeObjects = {
             static_cast<Object>(Star(2.34e22, 1000, glm::vec3{0.0f, 0.0f, 0.0f}, 5772.0f)),
-            Object(3.11e18, 100,glm::vec3 {10.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 2.8f})
+            static_cast<Object>(Planet(3.11e18, 100,glm::vec3 {10.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 4.0f}))
         };
-            camera.SetTarget({0.0f, 0.0f , 0.0f});
             break;
         case 2:
             activeObjects = {
-            static_cast<Object>(Star(2.34e23, 1409, glm::vec3{10.0f, 0.0f, 0.0f}, 5000.0f)),
-            static_cast<Object>(Star(2.34e23, 1409, glm::vec3{-10.0f, 0.0f, 0.0f}, 6800.0f))
+            static_cast<Object>(Star(2.34e23, 1409, glm::vec3{10.0f, 0.0f, 0.0f}, glm::vec3{0.0f, 0.0f, 6.0f}, 5000.0f)),
+            static_cast<Object>(Star(2.34e23, 1409, glm::vec3{-10.0f, 0.0f, 0.0f}, glm::vec3{0.0f, 0.0f, -6.0f},6800.0f))
         };
-            activeObjects[1].velocity[2] = 4;
-            activeObjects[0].velocity[2] = -4;
-            camera.SetTarget({0.0f, 0.0f , 0.0f});
             break;
         case 3:
             activeObjects = {
             static_cast<Object>(Star(2.34e22, 1409, glm::vec3{0.0f, 0.0f, 0.0f}, 5772.0f)),
-            Object(6.11e17, 123,glm::vec3 {5.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 2.8f}),
-            Object(3.33022e19, 336.4,glm::vec3 {-10.0f, 0.0f, -0.5f}, {0.0f, 0.0f, 2.2f}),
-            Object(1.223e20, 480,glm::vec3 {0.0f, 0.0f, -15.5f}, {1.5f, 0.0f, 0.0f})
+            static_cast<Object>(Planet(6.11e17, 123,glm::vec3 {5.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 5.0f})),
+            static_cast<Object>(Planet(3.33022e19, 336.4,glm::vec3 {-10.0f, 0.0f, -0.5f}, {0.0f, 0.0f, 3.7f})),
+            static_cast<Object>(Planet(1.223e20, 480,glm::vec3 {0.0f, 0.0f, -15.5f}, {3.2f, 0.0f, 0.0f}))
         };
             activeObjects[3].objectColor = {0.5f, 0.5f, 1.0f};
-            camera.SetTarget(activeObjects[3].position);
-            chaseObject = 3;
+            // chaseObject = 3;
             break;
         default:
             break;

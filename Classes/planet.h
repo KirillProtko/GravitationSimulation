@@ -7,9 +7,10 @@
 #include "object.h"
 
 
-class Planet : Object {
+class Planet : public Object {
     public:
     Planet(float mass, float dencity, glm::vec3 position);
+    Planet(float mass, float dencity, glm::vec3 position, glm::vec3 initVelocity);
 };
 
 

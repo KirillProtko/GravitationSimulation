@@ -12,6 +12,13 @@ Star::Star(float mass, float dencity, glm::vec3 position, float temperature) : O
     // SetLuminosity();
 }
 
+Star::Star(float mass, float dencity, glm::vec3 position, glm::vec3 initVelocity,float temperature) : Object(mass, dencity, position, initVelocity) {
+    this->type = "star";
+    this->IsLightSource = true;
+    this->objectColor = GetColor(temperature);
+    // SetLuminosity();
+}
+
 glm::vec3 Star::GetColor(float temperature) {
     if (temperature <= 2500.0f)
         return {1.0f, 0.3f, 0.1f};  // Dark red

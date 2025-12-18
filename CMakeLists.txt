@@ -15,6 +15,9 @@ add_executable(GravitationSimulation main.cpp
         Classes/grid2D.cpp
         Classes/grid2D.h
         Classes/star.cpp
+        Classes/star.h
+        Classes/planet.cpp
+        Classes/planet.h
 
 )
 

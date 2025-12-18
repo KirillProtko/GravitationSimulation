@@ -42,6 +42,8 @@ void Object::init() {
 
     std::cout << "VAO created: " << VAO << ", VBO: " << VBO << std::endl;
     std::cout << std::endl;
+    vertices = {0.0f, 0.0f, 0.0f, 0.0f};
+    createTrailVBOVAO(this->TrailVAO, this->TrailVBO, vertices.data(), vertices.size());
     this->Initilized = true;
 }
 
@@ -120,18 +122,48 @@ void Object::updateVertices() {
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
 }
 
+void Object::updateTrail() {
+    if (this->trailVertices.size() >= 4000) {
+        this->trailVertices.erase(this->trailVertices.begin());
+        this->trailVertices.erase(this->trailVertices.begin());
+        this->trailVertices.erase(this->trailVertices.begin());
+        this->trailVertices.erase(this->trailVertices.begin());
+    }
+    this->trailVertices.emplace_back(this->position.x);
+    this->trailVertices.emplace_back(this->position.y);
+    this->trailVertices.emplace_back(this->position.z);
+    this->trailVertices.emplace_back(0.5f);
 
-void Object::createVBOVAO(GLuint& vao, GLuint& vbo, const float* vertices, size_t amountOfVertex) {
+    glBindBuffer(GL_ARRAY_BUFFER, TrailVBO);
+    glBufferData(GL_ARRAY_BUFFER, this->trailVertices.size() * sizeof(float), this->trailVertices.data(), GL_STATIC_DRAW);
+}
+
+void Object::createVBOVAO(GLuint& vao, GLuint& vbo, const float* vertices, size_t vertexCount) {
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
 
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * amountOfVertex, vertices, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * vertexCount, vertices, GL_STATIC_DRAW);
 
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    glBindVertexArray(0);
+}
+
+void Object::createTrailVBOVAO(GLuint& TrailVAO, GLuint& TrailVBO, const float* vertices, size_t vertexCount) {
+    glGenVertexArrays(1, &TrailVAO);
+    glGenBuffers(1, &TrailVBO);
+
+    glBindVertexArray(TrailVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, TrailVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * vertexCount, vertices, GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
     glBindVertexArray(0);
 }

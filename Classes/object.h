@@ -13,13 +13,14 @@
 
 class Object {  //random object with user params
 public:
-        GLuint VBO, VAO;
+        GLuint VBO, VAO, TrailVBO, TrailVAO;
 
         glm::vec3 position, objectColor = {1.0f, 0.5f, 0.25f}, velocity = {0.0f, 0.0f, 0.0f};
         size_t vertexCount;
 
         float mass, dencity, radius;
         std::string type = "Object";
+        std::vector<float> trailVertices;
 
         bool Initilized = false, Active = true, Selected = false, IsLightSource = false;
 
@@ -33,10 +34,12 @@ public:
         void updatePosition(); // updating position in space adding object velocity
         void accelerateObject(glm::vec3 acceleration); // increasing velocity by acceleration giving from G-force
         void updateVertices();
+        void updateTrail();
         std::vector<float> getVertices(); //getting vertices for drawing spheres
         bool checkCollision(Object *object2) const;
 
         void createVBOVAO(GLuint& VAO, GLuint& VBO, const float* vertices, size_t vertexCount);
+        void createTrailVBOVAO(GLuint& TrailVAO, GLuint& TrailVBO, const float* vertices, size_t vertexCount);
 
         bool operator==(const Object& other) const;
 };

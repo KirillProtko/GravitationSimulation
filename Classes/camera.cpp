@@ -66,6 +66,10 @@ void Camera::SetTarget(glm::vec3 newTarget) {
     target = newTarget;
 }
 
+void Camera::SetMode(std::string mode) {
+    this->mode = mode;
+}
+
 glm::vec3 Camera::GetPosition() {
     return this->position;
 }
