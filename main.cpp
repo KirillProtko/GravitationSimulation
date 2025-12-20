@@ -17,6 +17,10 @@
 #include "Classes/camera.h"
 #include "Classes/grid2D.h"
 
+#include "libs/imgui/imgui.h"
+#include "libs/imgui/backends/imgui_impl_glfw.h"
+#include "libs/imgui/backends/imgui_impl_opengl3.h"
+
 std::default_random_engine generator;
 std::uniform_real_distribution<double> distribution(0,1);
 
@@ -226,8 +230,8 @@ int main() {
     glfwWindowHint(GLFW_OPENGL_ANY_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     GLFWmonitor *monitor = glfwGetPrimaryMonitor();
-    const float screenWidth = (glfwGetVideoMode(monitor)->width - 200.0f);
-    const float screenHeight = (glfwGetVideoMode(monitor)->height - 100.0f);
+    const float screenWidth = (glfwGetVideoMode(monitor)->width - 400.0f);
+    const float screenHeight = (glfwGetVideoMode(monitor)->height - 200.0f);
     windowWidth = screenWidth;
     windowHeight = screenHeight;
 
@@ -301,10 +305,23 @@ int main() {
     double fpsUpdateInterval = 0.5;
     glm::vec4 color;
 
+    ImGui::CreateContext();
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 330");
+    ImGuiIO& io = ImGui::GetIO();
+    ImFont* russian_font = io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/arial.ttf", 16.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
+
     // Main loop
     while (!glfwWindowShouldClose(window)) {
         // input processing
         processInput(window);
+
+        double xPos, yPos;
+        glfwGetCursorPos(window, &xPos, &yPos);
+
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
 
         // starting render
         if (theme == "dark") {
@@ -448,8 +465,6 @@ int main() {
 
             glBindVertexArray(vaoPreview);
             glBindBuffer(GL_ARRAY_BUFFER, vbopreview);
-            double xPos, yPos;
-            glfwGetCursorPos(window, &xPos, &yPos);
             float xObj = newObject[0].position.x;
             float zObj = newObject[0].position.z;
             glm::vec3 lastPos = screenToWorld(xPos, yPos);
@@ -483,8 +498,6 @@ int main() {
 
             glBindVertexArray(vaoPreview);
             glBindBuffer(GL_ARRAY_BUFFER, vbopreview);
-            double xPos, yPos;
-            glfwGetCursorPos(window, &xPos, &yPos);
             float xObj = newObject[0].position.x;
             float zObj = newObject[0].position.z;
             glm::vec3 lastPos = screenToWorld(xPos, yPos);
@@ -506,7 +519,52 @@ int main() {
             glBindVertexArray(vaoPreview);
             glDrawArrays(GL_LINES, 0, 2);
         }
+
+        ImGui::SetNextWindowPos(ImVec2(10, 10));
+        ImGui::SetNextWindowSize(ImVec2(300, 200));
+        ImGui::Begin("Object Creation", nullptr,
+                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
+        if (addingStage == NONE)
+            ImGui::TextColored(ImVec4(1, 1, 0, 1), "Справка:");
+        else
+            ImGui::TextColored(ImVec4(1, 1, 0, 1), "Добавление объекта");
+        ImGui::Separator();
+
+        switch (addingStage) {
+            case POSITION_CHOICE:
+                ImGui::Text("1 Этап: Выбор позиции");
+                ImGui::BulletText("Нажмите ЛКМ на место, где \nхотите разместить объект");
+                break;
+            case RADIUS_CHOICE:
+                ImGui::Text("2 Этап: Выбор радиуса");
+                ImGui::BulletText("Нажмите ЛКМ, чтобы установить \nрадиус");
+                ImGui::BulletText("Текущий радиус: %.2f",
+                                glm::distance(newObject[0].position, screenToWorld(xPos, yPos)));
+                break;
+            case VELOCITY_CHOICE:
+                ImGui::Text("3 Этап: Выбор ускорения");
+                ImGui::BulletText("Нажмите ЛКМ, чтобы установить \nначальное ускорение");
+                ImGui::BulletText("Текущее ускорение: (%.2f, %.2f)",
+                                screenToWorld(xPos, yPos).x - newObject[0].position.x,
+                                screenToWorld(xPos, yPos).z - newObject[0].position.z);
+                break;
+            default:
+                ImGui::BulletText("Е - переключить тему");
+                ImGui::BulletText("Пробел - остановить симуляцию");
+                ImGui::BulletText("Ф - перейти в режим добавления \nобъекта");
+                ImGui::BulletText("1, 2, 3 - загрузить сценарий");
+                ImGui::BulletText("Esc - выйти из программы");
+                ImGui::BulletText("↑ и ↓ - изменить прозрачность сетки");
+                ImGui::BulletText("Ч - включить/выключить траектории");
+                break;
+        }
+
+        ImGui::End();
+
         glBindVertexArray(0);
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         //      FPS COUNTER in windows title
         double currentTime = glfwGetTime();
         frameCount++;
@@ -531,6 +589,10 @@ int main() {
     glDeleteVertexArrays(1, &vaoPreview);
     glDeleteBuffers(1, &vbopreview);
     glDeleteProgram(defaultShaderProgram);
+
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
 
     glfwTerminate(); // this world is cruel and everything is going to end, just like this program
     return 0;
@@ -746,7 +808,6 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
                 double xPos, zPos;
                 glfwGetCursorPos(window, &xPos, &zPos);
                 glm::vec3 cursorPosition = screenToWorld(xPos, zPos);
-                std::cout << addingStage << std::endl;
                 switch (addingStage) {
                     case POSITION_CHOICE:
                         newObject[0].position = cursorPosition * glm::vec3{1.0f, 0.0f, 1.0f};

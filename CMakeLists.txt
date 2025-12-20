@@ -7,7 +7,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(OpenGL REQUIRED)
 find_package(glfw3 REQUIRED)
 
-add_executable(GravitationSimulation main.cpp
+set(SOURCES
+        main.cpp
         Classes/object.cpp
         Classes/object.h
         Classes/camera.cpp
@@ -21,7 +22,28 @@ add_executable(GravitationSimulation main.cpp
 
 )
 
+set(IMGUI_SOURCES
+        libs/imgui/imgui.cpp
+        libs/imgui/imgui_draw.cpp
+        libs/imgui/imgui_tables.cpp
+        libs/imgui/imgui_widgets.cpp
+        libs/imgui/backends/imgui_impl_glfw.cpp
+        libs/imgui/backends/imgui_impl_opengl3.cpp
+)
+
+add_executable(${PROJECT_NAME} ${SOURCES} ${IMGUI_SOURCES})
+
 add_library(glad STATIC ${CMAKE_SOURCE_DIR}/src/glad.c)
+
+target_include_directories(${PROJECT_NAME} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/Classes
+        ${CMAKE_CURRENT_SOURCE_DIR}/libs/imgui
+        ${CMAKE_CURRENT_SOURCE_DIR}/libs/imgui/backends
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${OPENGL_INCLUDE_DIR}
+        ${GLFW3_INCLUDE_DIR}
+)
 
 target_link_libraries(GravitationSimulation
         opengl32
