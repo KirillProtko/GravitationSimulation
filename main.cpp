@@ -18,7 +18,7 @@
 #include "Classes/grid2D.h"
 
 std::default_random_engine generator;
-std::uniform_real_distribution<double> distribution(-20,20);
+std::uniform_real_distribution<double> distribution(0,1);
 
 //
 // SHADERS
@@ -135,6 +135,27 @@ uniform vec3 objectColor;
 void main() {
     FragColor = vec4(objectColor, VertAlpha);
 })glsl";
+
+const char* vertexPreviewShaderSource = R"glsl(
+#version 330 core
+layout (location = 0) in vec3 aPos;
+
+uniform mat4 projection;
+uniform mat4 view;
+
+out float VertAlpha;
+void main() {
+    gl_Position = projection * view * vec4(aPos, 1.0);
+
+})glsl";
+
+const char* fragmentPreviewShaderSource = R"glsl(
+#version 330 core
+out vec4 FragColor;
+uniform vec4 color;
+void main() {
+    FragColor = color;
+})glsl";
 //
 // CAMERA
 //
@@ -146,12 +167,13 @@ Camera camera = Camera(); //        watch camera.h and camera.cpp
 void processInput(GLFWwindow *window);
 void updateState();
 void updateCamera();
-void addObject();
 void inactivateObject(Object& object);
 void deleteObject();
 void initializeObjects();
+void initializeObject(Object& newObject);
 GLuint createShaders(const char* vertexShaderSource, const char* fragmentShaderSource);
 void setLightSource(Object& object, int index, GLuint defaultShaderProgram);
+glm::vec3 screenToWorld(float mouseX, float mouseY);
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void scroll_callback(GLFWwindow* window, double xOffset, double yOffset);
@@ -163,9 +185,10 @@ void setScenario(int keyNumber);
 //
 // GLOBAL VARIABLES
 //
-bool pause = false, mousePressed = false;
-bool showTrails = false;
+bool pause = false, mousePressed = false, showTrails = false, cameraChanged = false;
 int chaseObject = -1;
+enum Stages {POSITION_CHOICE, RADIUS_CHOICE, VELOCITY_CHOICE, NONE};
+Stages addingStage = NONE;
 float gridOpacity = 1.0f;
 //          constant variables
 constexpr double G = 6.6743e-11;
@@ -180,12 +203,13 @@ std::vector<Object> activeObjects = {
 };
 //          vectors of inactive objects, in future they're going to deleting
 std::vector<Object> inactiveObjects = {};
+std::vector<Object> newObject = {};
 
 Grid2D grid = Grid2D(100, 300);
 
 //          matrices for vertex shader
 glm::mat4 view, projection, model;
-
+GLuint vaoPreview, vbopreview;
 
 std::string theme = "dark";
 //
@@ -234,6 +258,7 @@ int main() {
     GLuint defaultShaderProgram = createShaders(vertexDefaultShaderSource, fragmentDefaultShaderSource);
     GLuint lightShaderProgram = createShaders(vertexLightShaderSource, fragmentLightShaderSource);
     GLuint trailShaderProgram = createShaders(vertexTrailShaderSource, fragmentTrailShaderSource);
+    GLuint previewShaderProgram = createShaders(vertexPreviewShaderSource, fragmentPreviewShaderSource);
 
     // locations of uniform variables for default shaders
     GLint modelLoc = glGetUniformLocation(defaultShaderProgram, "model");
@@ -253,10 +278,19 @@ int main() {
     GLint trailViewLoc = glGetUniformLocation(trailShaderProgram, "view");
     GLint trailObjectColorLoc = glGetUniformLocation(trailShaderProgram, "objectColor");
 
+    //locations of uniform variables for preview shaders
+    GLint previewProjectionLoc = glGetUniformLocation(previewShaderProgram, "projection");
+    GLint previewViewLoc = glGetUniformLocation(previewShaderProgram, "view");
+    GLint previewColorLoc = glGetUniformLocation(previewShaderProgram, "color");
+
     int amountOfLightsSources = 0;
     short currentIndex = 0;
 
     initializeObjects();
+    grid.vertices = grid.getVertices(activeObjects);
+    grid.vertexCount = grid.vertices.size();
+    grid.createVBOVAO(grid.VAO, grid.VBO, grid.vertices.data(), grid.vertices.size());
+
     // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
@@ -277,7 +311,8 @@ int main() {
             glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
             grid.setColor({0.9f, 0.9f, 0.9f});
         } else {
-            glClearColor(0.9f, 0.9f, 0.9f, 1.0f);
+            // glClearColor(0.9f, 0.9f, 0.9f, 1.0f);
+            glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
             grid.setColor({0.0f, 0.0f, 0.0f});
         }
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -295,7 +330,7 @@ int main() {
         glUseProgram(defaultShaderProgram);
         glUniform1i(amountOfLightsLoc, amountOfLightsSources);
         for (auto& object : activeObjects) {
-            if (object.Initilized && object.IsLightSource) {
+            if (object.Initialized && object.IsLightSource) {
                 setLightSource(object, currentIndex, defaultShaderProgram);
                 currentIndex++;
             }
@@ -303,40 +338,39 @@ int main() {
 
         //          OBJECTS RENDER
         for (auto& object : activeObjects) {
-            if (object.Initilized && object.Active) {
-                object.updateVertices();
-            }
-            if (activeObjects.size() > 1) {
-                for (auto& object2 : activeObjects) {
-                    if (object.VAO !=  object2.VAO && object.Active && object2.Active) {
-                        float dx = object2.position.x - object.position.x;
-                        float dy = object2.position.y - object.position.y;
-                        float dz = object2.position.z - object.position.z;
-                        float distance = sqrt(dx * dx + dy * dy + dz * dz); //r
+            if (!pause) {
+                if (activeObjects.size() > 1) {
+                    for (auto& object2 : activeObjects) {
+                        if (object.VAO !=  object2.VAO && object.Active && object2.Active) {
+                            float dx = object2.position.x - object.position.x;
+                            float dy = object2.position.y - object.position.y;
+                            float dz = object2.position.z - object.position.z;
+                            float distance = sqrt(dx * dx + dy * dy + dz * dz); //r
 
-                        if (distance > 0) { //preventing undefined behaviour
-                            float gravityForce = (G * object.mass*object2.mass)/((distance*10000) * (distance*10000)); // F=G(m_1*m_2/r^2)
-                            if (!pause) {
-                                float acceleration = gravityForce / object.mass; //    F/m
-                                float x = dx/distance;
-                                float y = dy/distance;
-                                float z = dz/distance;
-                                glm::vec3 accelerationVector = {x*acceleration, y*acceleration, z*acceleration};
-                                object.accelerateObject(accelerationVector);
+                            if (distance > 0) { //preventing undefined behaviour
+                                float gravityForce = (G * object.mass*object2.mass)/((distance*10000) * (distance*10000)); // F=G(m_1*m_2/r^2)
+                                if (!pause) {
+                                    float acceleration = gravityForce / object.mass; //    F/m
+                                    float x = dx/distance;
+                                    float y = dy/distance;
+                                    float z = dz/distance;
+                                    glm::vec3 accelerationVector = {x*acceleration, y*acceleration, z*acceleration};
+                                    object.accelerateObject(accelerationVector);
+                                }
                             }
-                        }
-                        if (object.checkCollision(&object2)) {
-                            if (object.mass > object2.mass * 10) {
-                                inactivateObject(object2);
-                                // object.setMass(object.mass + object.mass);
-                            }
-                            else if (object.mass * 10 < object2.mass) {
-                                inactivateObject(object);
-                                // object2.setMass(object2.mass + object.mass);
-                            }
-                            else {
-                                inactivateObject(object);
-                                inactivateObject(object2);
+                            if (object.checkCollision(&object2)) {
+                                if (object.mass > object2.mass * 10) {
+                                    inactivateObject(object2);
+                                    // object.setMass(object.mass + object.mass);
+                                }
+                                else if (object.mass * 10 < object2.mass) {
+                                    inactivateObject(object);
+                                    // object2.setMass(object2.mass + object.mass);
+                                }
+                                else {
+                                    inactivateObject(object);
+                                    inactivateObject(object2);
+                                }
                             }
                         }
                     }
@@ -369,9 +403,10 @@ int main() {
                 glDrawArrays(GL_TRIANGLES, 0, object.vertexCount / 6);
             }
             if (showTrails) {
-                object.updateTrail();
-
-                color = glm::vec4(1.0f);
+                if (!pause) {
+                    object.updateTrail();
+                }
+                color = (theme == "dark") ? glm::vec4(1.0f) : glm::vec4(0.0f,0.0f,0.0f, 1.0f);
                 glUseProgram(trailShaderProgram);
 
                 glUniformMatrix4fv(trailProjectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
@@ -379,19 +414,20 @@ int main() {
                 glUniform3fv(trailObjectColorLoc, 1, glm::value_ptr(color));
 
                 glBindVertexArray(object.TrailVAO);
+                glLineWidth(2.0f);
                 glDrawArrays(GL_LINES, 0, object.trailVertices.size() / 4);
             }
-            glBindVertexArray(0);
         }
         if (!pause) {
             updateState();
         }
         //          GRID RENDER
         // after all because it can be semi-transparent
+        glLineWidth(1.0f);
         if (gridOpacity != 0.0f) {
-            grid.vertices = grid.getVertices(activeObjects);
-            grid.vertexCount = grid.vertices.size();
-            grid.createVBOVAO(grid.VAO, grid.VBO, grid.vertices.data(), grid.vertices.size());
+            if (!pause) {
+                grid.updateVertices(activeObjects);
+            }
             model = glm::mat4(1.0f);
             model = glm::translate(model, {0.0f, 0.0f, 0.0f});
             glUseProgram(lightShaderProgram);
@@ -404,8 +440,73 @@ int main() {
 
             glBindVertexArray(grid.VAO);
             glDrawArrays(GL_LINES, 0, grid.vertexCount / 3);
-            glBindVertexArray(0);
         }
+        //      PREVIEW OF CREATING
+        if (addingStage == RADIUS_CHOICE) {
+            glGenVertexArrays(1, &vaoPreview);
+            glGenBuffers(1, &vbopreview);
+
+            glBindVertexArray(vaoPreview);
+            glBindBuffer(GL_ARRAY_BUFFER, vbopreview);
+            double xPos, yPos;
+            glfwGetCursorPos(window, &xPos, &yPos);
+            float xObj = newObject[0].position.x;
+            float zObj = newObject[0].position.z;
+            glm::vec3 lastPos = screenToWorld(xPos, yPos);
+
+            std::vector<float> vertPrev = {};
+            float radius = glm::distance(newObject[0].position, {lastPos.x, 0.0f, lastPos.z});
+            vertPrev.push_back(xObj);
+            vertPrev.push_back(0.0f);
+            vertPrev.push_back(zObj);
+            for (int i = 0; i <= 20; ++i) {
+                vertPrev.push_back(xObj + radius * cos( 2*glm::pi<float>() * (float) i / 20));
+                vertPrev.push_back(0.0f);
+                vertPrev.push_back(zObj + radius * sin(2*glm::pi<float>() * (float) i / 20));
+            }
+            glBufferData(GL_ARRAY_BUFFER, sizeof(float) * vertPrev.size(), vertPrev.data(), GL_STATIC_DRAW);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+            glEnableVertexAttribArray(0);
+            glUseProgram(previewShaderProgram);
+
+            color = (theme == "dark") ? glm::vec4(1.0f, 1.0f, 1.0f, 0.5f) : glm::vec4(0.0f,0.0f,0.0f, 0.5f);
+            glUniformMatrix4fv(previewProjectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+            glUniformMatrix4fv(previewViewLoc, 1, GL_FALSE, glm::value_ptr(view));
+            glUniform4fv(previewColorLoc, 1, glm::value_ptr(color));
+
+            glBindVertexArray(vaoPreview);
+            glDrawArrays(GL_TRIANGLE_FAN, 0, vertPrev.size() / 3);
+
+        } else if (addingStage == VELOCITY_CHOICE) {
+            glGenVertexArrays(1, &vaoPreview);
+            glGenBuffers(1, &vbopreview);
+
+            glBindVertexArray(vaoPreview);
+            glBindBuffer(GL_ARRAY_BUFFER, vbopreview);
+            double xPos, yPos;
+            glfwGetCursorPos(window, &xPos, &yPos);
+            float xObj = newObject[0].position.x;
+            float zObj = newObject[0].position.z;
+            glm::vec3 lastPos = screenToWorld(xPos, yPos);
+
+            std::vector<float> vertPrev = {
+                xObj, 0.0f, zObj,
+                lastPos.x, 0.0f, lastPos.z
+            };
+            glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 6, vertPrev.data(), GL_STATIC_DRAW);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+            glEnableVertexAttribArray(0);
+            glUseProgram(previewShaderProgram);
+
+            color = (theme == "dark") ? glm::vec4(1.0f, 1.0f, 1.0f, 0.5f) : glm::vec4(0.0f,0.0f,0.0f, 0.5f);
+            glUniformMatrix4fv(previewProjectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+            glUniformMatrix4fv(previewViewLoc, 1, GL_FALSE, glm::value_ptr(view));
+            glUniform4fv(previewColorLoc, 1, glm::value_ptr(color));
+
+            glBindVertexArray(vaoPreview);
+            glDrawArrays(GL_LINES, 0, 2);
+        }
+        glBindVertexArray(0);
         //      FPS COUNTER in windows title
         double currentTime = glfwGetTime();
         frameCount++;
@@ -417,6 +518,7 @@ int main() {
             lastTime = currentTime;
         }
 
+
         //events and buffer change
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -426,6 +528,8 @@ int main() {
         glDeleteVertexArrays(1, &obj.VAO);
         glDeleteBuffers(1, &obj.VBO);
     }
+    glDeleteVertexArrays(1, &vaoPreview);
+    glDeleteBuffers(1, &vbopreview);
     glDeleteProgram(defaultShaderProgram);
 
     glfwTerminate(); // this world is cruel and everything is going to end, just like this program
@@ -435,10 +539,6 @@ int main() {
 //
 // main functions (definitions)
 //
-void addObject() {
-    activeObjects.emplace_back(rand() * 1e15f, rand() % 10+1000 , glm::vec3 {distribution(generator), 0, distribution(generator)});
-    initializeObjects();
-}
 
 void inactivateObject(Object& object) {
     object.Active = false;
@@ -449,10 +549,15 @@ void inactivateObject(Object& object) {
 
 void initializeObjects() {
     for (auto& obj : activeObjects) {
-        if (!obj.Initilized) {
+        if (!obj.Initialized) {
             obj.init();
         }
     }
+}
+
+void initializeObject(Object& newObj) {
+    activeObjects.emplace_back(newObj);
+    activeObjects.back().init();
 }
 
 void updateState() {
@@ -533,7 +638,19 @@ void processInput(GLFWwindow *window) {
         themeChanging = false;
     }
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-        addObject();
+        if (addingStage == NONE)
+        {
+            addingStage = POSITION_CHOICE;
+            pause = true;
+
+            camera.SetMode("locked");
+            camera.SetTargetPosition({0.0f, 10.0f, 0.0f});
+            camera.SetTargetAngles({90.0f, 0.0f});
+            camera.SetTargetTarget({0.0f, 0.0f, 0.0f});
+
+            Object obj;
+            newObject.emplace_back(obj);
+        }
     }
 
     if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
@@ -625,8 +742,45 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (action == GLFW_PRESS) {
             mousePressed = true;
-            camera.SetFirstMouse(true);
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            if (addingStage != NONE) {
+                double xPos, zPos;
+                glfwGetCursorPos(window, &xPos, &zPos);
+                glm::vec3 cursorPosition = screenToWorld(xPos, zPos);
+                std::cout << addingStage << std::endl;
+                switch (addingStage) {
+                    case POSITION_CHOICE:
+                        newObject[0].position = cursorPosition * glm::vec3{1.0f, 0.0f, 1.0f};
+                        camera.SetTargetPosition(cursorPosition + glm::vec3{0.0f, 5.0f, 0.0f});
+                        camera.SetTargetTarget(newObject[0].position);
+                        addingStage = RADIUS_CHOICE;
+                        break;
+                    case RADIUS_CHOICE:
+                        newObject[0].radius = glm::distance(newObject[0].position, cursorPosition);
+                        newObject[0].density = 500.0f;
+                        newObject[0].calculateMass();
+                        newObject[0].type = "Planet";
+                        newObject[0].IsLightSource = false;
+                        newObject[0].objectColor = glm::vec3(distribution(generator), distribution(generator), distribution(generator));
+                        initializeObject(newObject[0]);
+                        addingStage = VELOCITY_CHOICE;
+                        break;
+                    case VELOCITY_CHOICE:
+                        activeObjects.back().velocity = cursorPosition - newObject[0].position;
+                        activeObjects.back().velocity.y = 0;
+                        addingStage = NONE;
+                        pause = false;
+                        camera.SetTargetTarget(glm::vec3{0.0f, 0.0f, 0.0f});
+                        camera.SetTargetAngles({45.0f, 20.0f});
+                        camera.SetMode("centered");
+                        newObject.clear();
+                        break;
+                    default:
+                        break;
+                }
+            } else {
+                camera.SetFirstMouse(true);
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            }
         }
         else {
             mousePressed = false;
@@ -636,14 +790,19 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 }
 
 void cursor_position_callback(GLFWwindow* window, double xPos, double yPos) {
-     if (!mousePressed) {
+    if (!mousePressed) {
          return;
-     }
+    }
     camera.rotate(xPos, yPos);
 }
 
 void updateCamera() {
-    view = camera.update();
+    view = camera.getViewMatrix();
+    if (camera.GetPosition() != camera.GetTargetPosition() || camera.GetAngles() != camera.GetTargetAngles() || camera.GetTarget() != camera.GetTargetTarget()) {
+        camera.ExponentionalChangePosition();
+        camera.ExponentionalChangeTarget();
+        camera.ExponentionalChangeAngles();
+    }
     projection = glm::perspective(glm::radians(45.0f), windowWidth / windowHeight, 0.01f, 100000.0f);
 }
 
@@ -702,3 +861,19 @@ void setScenario(int keyNumber) {
     initializeObjects();
 }
 
+glm::vec3 screenToWorld(float mouseX, float mouseY) {
+    float x = (2.0f * mouseX) / windowWidth - 1.0f;
+    float y = 1.0f - (2.0f * mouseY) / windowHeight;
+
+    glm::vec4 rayClip(x, y, -1.0f, 1.0f);
+    glm::mat4 invProjection = glm::inverse(projection);
+    glm::vec4 rayEye = invProjection * rayClip;
+    rayEye = glm::vec4(rayEye.x, rayEye.y, -1.0f, 0.0f);
+
+    glm::mat4 invView = glm::inverse(view);
+    glm::vec4 rayWorld = invView * rayEye;
+    glm::vec3 rayDir = glm::normalize(glm::vec3(rayWorld));
+
+    float t = -camera.GetPosition().y / rayDir.y;
+    return camera.GetPosition() + rayDir * t;
+}

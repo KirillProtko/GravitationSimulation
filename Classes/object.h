@@ -18,14 +18,15 @@ public:
         glm::vec3 position, objectColor = {1.0f, 0.5f, 0.25f}, velocity = {0.0f, 0.0f, 0.0f};
         size_t vertexCount;
 
-        float mass, dencity, radius;
+        float mass, density, radius;
         std::string type = "Object";
         std::vector<float> trailVertices;
 
-        bool Initilized = false, Active = true, Selected = false, IsLightSource = false;
+        bool Initialized = false, Active = true, Selected = false, IsLightSource = false;
 
-        explicit Object(float mass, float dencity, glm::vec3 position);
-        explicit Object(float mass, float dencity, glm::vec3 position, glm::vec3 initVelocity);
+        Object();
+        explicit Object(float mass, float density, glm::vec3 position);
+        explicit Object(float mass, float density, glm::vec3 position, glm::vec3 initVelocity);
         // ~Object();
         void init();
 
@@ -37,6 +38,7 @@ public:
         void updateTrail();
         std::vector<float> getVertices(); //getting vertices for drawing spheres
         bool checkCollision(Object *object2) const;
+        void calculateMass();
 
         void createVBOVAO(GLuint& VAO, GLuint& VBO, const float* vertices, size_t vertexCount);
         void createTrailVBOVAO(GLuint& TrailVAO, GLuint& TrailVBO, const float* vertices, size_t vertexCount);

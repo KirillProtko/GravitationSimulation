@@ -5,16 +5,20 @@
 
 glm::vec3 sphericalToCartesian(float r, float theta, float phi);
 
-Object::Object(float mass, float dencity, glm::vec3 position) {
+Object::Object() : mass(0), density(0), radius(0), position(0), velocity(0),
+           VAO(0), VBO(0), TrailVAO(0), TrailVBO(0), vertexCount(0),
+           IsLightSource(false), Active(true), Initialized(false),
+           type("Object"), objectColor(0.5f, 0.5f, 0.5f) {}
+Object::Object(float mass, float density, glm::vec3 position) {
     this->mass = mass;
-    this->dencity = dencity;
-    this->radius = getRadius(mass, dencity);
+    this->density = density;
+    this->radius = getRadius(mass, density);
     this->position = position;
 }
-Object::Object(float mass, float dencity, glm::vec3 position, glm::vec3 initVelocity) {
+Object::Object(float mass, float density, glm::vec3 position, glm::vec3 initVelocity) {
     this->mass = mass;
-    this->dencity = dencity;
-    this->radius = getRadius(mass, dencity);
+    this->density = density;
+    this->radius = getRadius(mass, density);
     this->position = position;
     this->velocity = initVelocity;
 }
@@ -25,35 +29,34 @@ Object::Object(float mass, float dencity, glm::vec3 position, glm::vec3 initVelo
 // }
 
 void Object::init() {
-    std::cout << "Initializing object at position: "
-             << position.x << ", " << position.y << ", " << position.z
-             << std::endl;
-    std::cout << "Radius: " << radius << std::endl;
-    std::cout << "Mass: " << mass << ". Dencity: " << dencity << std::endl;
+    // std::cout << "Initializing object at position: "
+    //          << position.x << ", " << position.y << ", " << position.z
+    //          << std::endl;
+    // std::cout << "Radius: " << radius << std::endl;
+    // std::cout << "Mass: " << mass << ". Dencity: " << density << std::endl;
 
     std::vector<float> vertices = getVertices();
     this->vertexCount = vertices.size();
 
-    std::cout << "Generated " << vertexCount << " vertices ("
-              << vertexCount / 3 << " points, "
-              << vertexCount / 9 << " triangles)" << std::endl;
+    // std::cout << "Generated " << vertexCount << " vertices ("
+    //           << vertexCount / 3 << " points, "
+    //           << vertexCount / 9 << " triangles)" << std::endl;
 
     createVBOVAO(this->VAO, this->VBO, vertices.data(), this->vertexCount);
 
-    std::cout << "VAO created: " << VAO << ", VBO: " << VBO << std::endl;
-    std::cout << std::endl;
+    // std::cout << "VAO created: " << VAO << ", VBO: " << VBO << std::endl;
     vertices = {0.0f, 0.0f, 0.0f, 0.0f};
     createTrailVBOVAO(this->TrailVAO, this->TrailVBO, vertices.data(), vertices.size());
-    this->Initilized = true;
+    this->Initialized = true;
 }
 
 void Object::setMass(float newMass) {
     this->mass = newMass;
-    this->radius = getRadius(newMass, this->dencity);
+    this->radius = getRadius(newMass, this->density);
 }
 
 float Object::getRadius(float newMass, float newDencity) {
-    return pow((3*newMass/newDencity)/4*glm::pi<float>(), 1.0f/3.0f)/2000000.0f;
+    return std::pow((3.0f * newMass) / (newDencity * 4.0f * glm::pi<float>()), 1.0f/3.0f) / 2000000.0f;
 }
 
 void Object::updatePosition() {
@@ -123,7 +126,7 @@ void Object::updateVertices() {
 }
 
 void Object::updateTrail() {
-    if (this->trailVertices.size() >= 4000) {
+    if (this->trailVertices.size() >= 8000) {
         this->trailVertices.erase(this->trailVertices.begin());
         this->trailVertices.erase(this->trailVertices.begin());
         this->trailVertices.erase(this->trailVertices.begin());
@@ -178,6 +181,10 @@ bool Object::checkCollision(Object *object2) const {
         return true;
     }
     return false;
+}
+
+void Object::calculateMass() {
+    this->mass = (pow(this->radius * 2000000.0f, 3.0f) * (4.0f *glm::pi<float>()) * this->density) / 3.0f;
 }
 
 glm::vec3 sphericalToCartesian(float r, float theta, float phi){

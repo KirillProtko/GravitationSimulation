@@ -88,6 +88,13 @@ std::vector<float> Grid2D::getVertices(std::vector<Object>& activeObjects) {
     }
     return vertices;
 }
+void Grid2D::updateVertices(std::vector<Object>& activeObjects) {
+    std::vector<float> vertices = getVertices(activeObjects);
+
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+}
+
 
 void Grid2D::createVBOVAO(GLuint& vao, GLuint& vbo, const float* vertices, size_t amountOfVertex) {
     glGenVertexArrays(1, &vao);

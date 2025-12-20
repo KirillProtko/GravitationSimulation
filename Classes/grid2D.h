@@ -21,6 +21,7 @@ public:
     glm::vec3 color;
     Grid2D(int divisions, float width);
     std::vector<float> getVertices(std::vector<Object>& activeObjects);
+    void updateVertices(std::vector<Object>& activeObjects);
     void setDivisions(int newDivisions);
     void setWidth(float newWidth);
     void setColor(glm::vec3 newColor);
